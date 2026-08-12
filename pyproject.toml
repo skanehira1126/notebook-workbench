@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "notebook-workbench"
+version = "0.1.0"
+description = "Deterministic structural inspection and editing for Jupyter notebooks"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Notebook Workbench contributors" }]
+dependencies = ["nbformat>=5.10,<6"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "License :: OSI Approved :: Apache Software License",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.3", "pytest-cov>=6"]
+
+[project.scripts]
+notebook-workbench = "notebook_workbench.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/notebook_workbench"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "tox>=4.25",
+]

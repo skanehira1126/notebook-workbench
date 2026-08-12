@@ -1,0 +1,4 @@
+interface:
+  display_name: "Notebook Workbench"
+  short_description: "Create and edit notebook cells safely"
+  default_prompt: "Use $notebook-workbench to create, inspect, and safely edit this Jupyter notebook."
