@@ -12,11 +12,12 @@ Install both the plugin and CLI:
 
 ```bash
 codex plugin marketplace add skanehira1126/notebook-workbench
+codex plugin add notebook-workbench@notebook-workbench
 uv tool install git+https://github.com/skanehira1126/notebook-workbench.git
 notebook-workbench --version
 ```
 
-Install `notebook-workbench` from the Codex Plugin screen, then open a new task/session. The plugin supplies the agent workflow while the CLI performs deterministic notebook operations; both are required.
+You can use `codex plugin add` as shown above or install `notebook-workbench` from the Codex Plugin screen. Then open a new task/session. The plugin supplies the agent workflow while the CLI performs deterministic notebook operations; both are required.
 
 To update an existing installation:
 

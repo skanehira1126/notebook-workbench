@@ -1,0 +1,20 @@
+{
+  "name": "notebook-workbench",
+  "interface": {
+    "displayName": "Notebook Workbench"
+  },
+  "plugins": [
+    {
+      "name": "notebook-workbench",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
