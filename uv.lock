@@ -6,10 +6,6 @@ resolution-markers = [
     "python_full_version != '3.12.*'",
 ]
 
-[options]
-exclude-newer = "2026-08-05T23:51:28.419029Z"
-exclude-newer-span = "P1W"
-
 [[package]]
 name = "aiohappyeyeballs"
 version = "2.7.1"
