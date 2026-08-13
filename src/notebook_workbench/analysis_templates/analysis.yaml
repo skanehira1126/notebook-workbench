@@ -1,0 +1,12 @@
+schema_version: 1
+analysis_id: "{{ANALYSIS_ID}}"
+title: {{TITLE_YAML}}
+status: "active"
+created_at: "{{CREATED_AT}}"
+updated_at: "{{CREATED_AT}}"
+latest_request_id: "req-001"
+latest_run_id: null
+accepted_requests:
+  - "req-001"
+accepted_runs: []
+output_revision: 0

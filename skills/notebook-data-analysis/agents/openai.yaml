@@ -1,0 +1,4 @@
+interface:
+  display_name: "Notebook Data Analysis"
+  short_description: "Run reproducible, iterative notebook analyses"
+  default_prompt: "Use $notebook-data-analysis to create or continue a reproducible notebook analysis workspace."

@@ -1,8 +1,8 @@
 # Notebook Workbench
 
-Notebook Workbench is a deterministic command-line tool and Codex plugin for creating, inspecting, and editing Jupyter notebooks without manipulating notebook JSON directly. It keeps the `.ipynb` file as the source of truth, addresses cells by stable ID or tag, validates every mutation with `nbformat`, and extracts outputs from already-executed notebooks.
+Notebook Workbench is a deterministic command-line tool and Codex plugin for creating, inspecting, and editing Jupyter notebooks without manipulating notebook JSON directly. It also manages reproducible analysis workspaces with immutable requests, separate source and executed notebooks, Papermill provenance, run-level evidence, and a cumulative answer-first report.
 
-Notebook execution is intentionally out of scope. Call Papermill or a Jupyter kernel from the workflow that owns execution.
+Ad hoc execution remains outside the structural notebook commands. The `analysis` lifecycle owns Papermill execution so state transitions, digests, and evidence stay consistent.
 
 ## Getting started
 
@@ -35,7 +35,35 @@ uv sync
 uv run notebook-workbench --version
 ```
 
-The plugin manifest is at `.codex-plugin/plugin.json`; it declares only the bundled `notebook-workbench` skill and has no MCP server or app dependency. Installing the plugin does not implicitly install the Python package or create a CLI environment inside the plugin cache.
+The plugin manifest is at `.codex-plugin/plugin.json`; it declares the bundled `notebook-workbench` and `notebook-data-analysis` skills and has no MCP server or app dependency. Installing the plugin does not implicitly install the Python package or create a CLI environment inside the plugin cache.
+
+## Reproducible analysis workflow
+
+Use `$notebook-data-analysis` when the notebook should answer an evolving analytical question and remain reviewable or rerunnable. Start a workspace and a source run:
+
+```bash
+notebook-workbench analysis init \
+  --root notebooks/analyses \
+  --analysis-id retention-drop \
+  --title "Why did retention fall?" \
+  --json
+
+notebook-workbench analysis start-run \
+  --analysis-dir notebooks/analyses/retention-drop \
+  --request-id req-001 \
+  --json
+```
+
+Fill the request, author `runs/001/analysis.ipynb` with the structural commands, then execute without overwriting source:
+
+```bash
+notebook-workbench analysis execute \
+  --analysis-dir notebooks/analyses/retention-drop \
+  --run-id run-001 \
+  --json
+```
+
+Record semantic checks and findings in `run.yaml` and `result.md`, integrate the evidence into `output.md`, then complete and accept the run. Strict validation checks local runtime evidence; `--portable` permits intentionally omitted executed notebooks and runtime artifacts while retaining source and state validation.
 
 ## Safe authoring workflow
 
@@ -88,6 +116,14 @@ Every successful mutation reports the resulting notebook SHA-256 and affected ce
 | `tag rename NOTEBOOK --from OLD --to NEW [--all]` | Rename one matching tag, or all explicitly. |
 | `output get NOTEBOOK selector [--save-media DIR] [--json]` | Read stream, result, display, error, and MIME outputs. |
 | `output errors NOTEBOOK [--json]` | List all error outputs; an error-free notebook returns an empty list and exit code 0. |
+| `analysis init --root ROOT --analysis-id ID --title TITLE` | Create a versioned analysis workspace and initial request. |
+| `analysis add-request ...` | Add an immutable follow-up linked to completed runs. |
+| `analysis start-run ...` | Create an unexecuted source notebook and schema-v2 run record. |
+| `analysis execute ...` | Execute a planned run with Papermill into `executed.ipynb`. |
+| `analysis complete-run ...` | Complete an executed run after semantic and digest checks. |
+| `analysis accept-run ...` | Accept a completed run after integration into `output.md`. |
+| `analysis set-status ...` | Complete or archive a consistent analysis. |
+| `analysis validate ... [--portable]` | Validate workspace identities, state, evidence, notebooks, and digests. |
 
 Cell add accepts exactly one of `--before-tag`, `--after-tag`, `--before-cell-id`, `--after-cell-id`, or `--append`. Mutation source is read from UTF-8 `--source-file`; omit it to read stdin.
 
@@ -113,12 +149,13 @@ JSON mode preserves cell and output order and returns full MIME bundles. Media e
 | 4 | SHA-256 conflict |
 | 5 | Invalid notebook or rejected mutation invariant |
 | 6 | File I/O or atomic replace failure |
+| 7 | Analysis notebook execution failure |
 
 Command errors go to stderr. With `--json`, stderr contains a stable object with `error.code` and `error.message`. A completed `validate --json` check reports its validation result on stdout even when `valid` is `false`; in that case the process exits with code 5.
 
 ## Python API
 
-The CLI is an adapter over typed functions in `notebook_workbench.notebook_ops` and `notebook_workbench.output_ops`. Domain code has no dependency on argparse, stdout, Codex, Papermill, or an analysis workspace.
+The CLI is an adapter over typed functions in `notebook_workbench.notebook_ops`, `notebook_workbench.output_ops`, and `notebook_workbench.analysis_ops`. Notebook mutation remains independent from analysis lifecycle logic; the analysis domain is the sole owner of Papermill execution and workspace state.
 
 ## Development and validation
 
@@ -138,4 +175,4 @@ uv run tox -e py313 -- tests/test_cli.py
 
 GitHub Actions uses the same tox environments across Python 3.11–3.13 on Linux and macOS. The `codex` environment remains a local plugin-development check because it requires Codex's system skill validators to be installed.
 
-The test suite covers notebook creation, stable cell IDs, legacy ID-less rejection, read selectors, source validation, atomic mutation invariants, SHA conflicts, symlinks and traversal rejection, tag operations, output types and media, CLI JSON/text separation, exit codes, and plugin shape.
+The test suite covers notebook creation, stable cell IDs, legacy ID-less rejection, read selectors, source validation, atomic mutation invariants, SHA conflicts, symlinks and traversal rejection, tag operations, output types and media, analysis state transitions, real Papermill execution, portable and strict workspace validation, CLI JSON/text separation, exit codes, and plugin shape.

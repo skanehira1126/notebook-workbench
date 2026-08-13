@@ -1,17 +1,17 @@
 {
   "name": "notebook-workbench",
-  "version": "0.1.0",
-  "description": "Create, inspect, and safely edit Jupyter notebook cells while keeping the notebook as the source of truth.",
+  "version": "0.2.0",
+  "description": "Create, inspect, and safely edit Jupyter notebooks, and run reproducible iterative analyses with durable evidence.",
   "author": {
     "name": "Notebook Workbench contributors"
   },
   "license": "Apache-2.0",
-  "keywords": ["jupyter", "notebook", "ipynb", "cells"],
+  "keywords": ["jupyter", "notebook", "ipynb", "cells", "analysis", "papermill"],
   "skills": "./skills/",
   "interface": {
     "displayName": "Notebook Workbench",
-    "shortDescription": "Create and safely edit Jupyter notebook cells.",
-    "longDescription": "Provides a deterministic local CLI and Codex workflow for creating notebooks, inspecting notebook structure, editing cells by stable ID or tag, validating source notebooks, and extracting executed outputs.",
+    "shortDescription": "Safely edit notebooks and run reproducible analyses.",
+    "longDescription": "Provides a deterministic local CLI and Codex workflows for creating notebooks, editing cells by stable ID or tag, validating and inspecting outputs, and managing reproducible iterative analyses with immutable requests, Papermill runs, and durable evidence.",
     "developerName": "Notebook Workbench contributors",
     "category": "Developer Tools",
     "capabilities": ["Read", "Write"],
@@ -19,7 +19,9 @@
       "Create a new source notebook.",
       "List the cells and tags in this notebook.",
       "Safely update a notebook cell by tag.",
-      "Inspect errors in this executed notebook."
+      "Inspect errors in this executed notebook.",
+      "Create a reproducible notebook analysis workspace.",
+      "Continue this analysis with a follow-up request and evidence-preserving run."
     ]
   }
 }

@@ -2,7 +2,9 @@ import json
 from pathlib import Path
 
 import nbformat
+import yaml
 
+from notebook_workbench import analysis_ops
 from notebook_workbench.cli import main
 
 
@@ -176,3 +178,198 @@ def test_tag_cli_uses_cell_tag_selector_without_colliding_with_new_tag(
         == 0
     )
     assert json.loads(capsys.readouterr().out)["cell_ids"] == ["audit-cell"]
+
+
+def test_analysis_cli_runs_complete_lifecycle(tmp_path: Path, monkeypatch, capsys) -> None:
+    root = tmp_path / "analyses"
+    assert (
+        main(
+            [
+                "analysis",
+                "init",
+                "--root",
+                str(root),
+                "--analysis-id",
+                "revenue-check",
+                "--title",
+                "Revenue check",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    analysis_dir = Path(json.loads(capsys.readouterr().out)["analysis_dir"])
+
+    assert (
+        main(
+            [
+                "analysis",
+                "start-run",
+                "--analysis-dir",
+                str(analysis_dir),
+                "--request-id",
+                "req-001",
+                "--title",
+                "First run",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["run_id"] == "run-001"
+
+    def fake_execute(*, input_path, output_path, **_):
+        nbformat.write(nbformat.read(input_path, as_version=4), output_path)
+
+    monkeypatch.setattr(analysis_ops.papermill, "execute_notebook", fake_execute)
+    assert (
+        main(
+            [
+                "analysis",
+                "execute",
+                "--analysis-dir",
+                str(analysis_dir),
+                "--run-id",
+                "run-001",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["status"] == "executed"
+
+    run_path = analysis_dir / "runs" / "001" / "run.yaml"
+    run = yaml.safe_load(run_path.read_text(encoding="utf-8"))
+    run["validation"].update(
+        {
+            "acceptance_criteria": "passed",
+            "data_quality": "passed",
+            "artifact_links": "passed",
+        }
+    )
+    run_path.write_text(yaml.safe_dump(run, sort_keys=False), encoding="utf-8")
+    assert (
+        main(
+            [
+                "analysis",
+                "complete-run",
+                "--analysis-dir",
+                str(analysis_dir),
+                "--run-id",
+                "run-001",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["status"] == "completed"
+
+    output = analysis_dir / "output.md"
+    output.write_text(output.read_text(encoding="utf-8") + "\nEvidence: run-001\n", encoding="utf-8")
+    assert (
+        main(
+            [
+                "analysis",
+                "accept-run",
+                "--analysis-dir",
+                str(analysis_dir),
+                "--run-id",
+                "run-001",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["output_revision"] == 1
+
+    assert (
+        main(
+            [
+                "analysis",
+                "set-status",
+                "--analysis-dir",
+                str(analysis_dir),
+                "--status",
+                "completed",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["status"] == "completed"
+
+    assert (
+        main(
+            [
+                "analysis",
+                "add-request",
+                "--analysis-dir",
+                str(analysis_dir),
+                "--title",
+                "Segment revenue",
+                "--parent-request",
+                "req-001",
+                "--based-on-run",
+                "run-001",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["request_id"] == "req-002"
+
+    assert (
+        main(
+            [
+                "analysis",
+                "validate",
+                "--analysis-dir",
+                str(analysis_dir),
+                "--portable",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["valid"] is True
+
+
+def test_analysis_cli_validation_failure_and_execution_error_are_stable_json(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    root = tmp_path / "analyses"
+    assert main(["analysis", "init", "--root", str(root), "--analysis-id", "broken", "--title", "Broken"]) == 0
+    analysis_dir = root / "broken"
+    capsys.readouterr()
+    assert main(["analysis", "start-run", "--analysis-dir", str(analysis_dir), "--request-id", "req-001"]) == 0
+    capsys.readouterr()
+
+    (analysis_dir / "output.md").unlink()
+    assert main(["analysis", "validate", "--analysis-dir", str(analysis_dir), "--json"]) == 5
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert json.loads(captured.err)["error"]["code"] == "analysis_invalid"
+
+    (analysis_dir / "output.md").write_text("# Broken\n", encoding="utf-8")
+
+    def fail(**_):
+        raise RuntimeError("kernel unavailable")
+
+    monkeypatch.setattr(analysis_ops.papermill, "execute_notebook", fail)
+    assert (
+        main(
+            [
+                "analysis",
+                "execute",
+                "--analysis-dir",
+                str(analysis_dir),
+                "--run-id",
+                "run-001",
+                "--json",
+            ]
+        )
+        == 7
+    )
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert json.loads(captured.err)["error"]["code"] == "analysis_execution_failed"

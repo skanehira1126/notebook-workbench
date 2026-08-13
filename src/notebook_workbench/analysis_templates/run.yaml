@@ -1,0 +1,43 @@
+schema_version: 2
+run_id: "{{RUN_ID}}"
+request_id: "{{REQUEST_ID}}"
+title: {{TITLE_YAML}}
+status: "planned"
+created_at: "{{CREATED_AT}}"
+started_at: null
+finished_at: null
+completed_at: null
+notebook:
+  source_path: "analysis.ipynb"
+  executed_path: "executed.ipynb"
+  origin: "{{NOTEBOOK_ORIGIN}}"
+  template_path: {{TEMPLATE_PATH}}
+  template_sha256: {{TEMPLATE_SHA256}}
+  source_sha256: null
+  executed_sha256: null
+  parameters: {}
+inputs: []
+execution:
+  runner: null
+  papermill_version: null
+  nbformat_version: null
+  python_version: null
+  kernel: null
+  cwd: null
+  start_timeout_seconds: null
+  cell_timeout_seconds: null
+  code_revision: null
+  environment: null
+  seed: null
+outputs:
+  result: "result.md"
+  artifacts_directory: "artifacts"
+validation:
+  clean_execution: "not-run"
+  acceptance_criteria: "not-run"
+  data_quality: "not-run"
+  artifact_links: "not-run"
+warnings: []
+failure:
+  message: null
+  failed_step: null

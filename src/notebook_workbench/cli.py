@@ -6,7 +6,19 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from . import __version__
+from .analysis_ops import (
+    accept_analysis_run,
+    add_analysis_request,
+    complete_analysis_run,
+    execute_analysis_run,
+    initialize_analysis,
+    set_analysis_status,
+    start_analysis_run,
+    validate_analysis_workspace,
+)
 from .errors import (
+    AnalysisValidationError,
     CLIUsageError,
     NotebookValidationError,
     WorkbenchError,
@@ -39,7 +51,7 @@ class WorkbenchArgumentParser(argparse.ArgumentParser):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = WorkbenchArgumentParser(prog="notebook-workbench")
-    parser.add_argument("--version", action="version", version="%(prog)s 0.1.0")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     groups = parser.add_subparsers(dest="group", required=True)
 
     notebook = groups.add_parser("notebook", help="create a notebook")
@@ -127,6 +139,73 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument("--source", action="store_true")
     mode.add_argument("--executed", action="store_true")
     _add_json(validate)
+
+    analysis = groups.add_parser("analysis", help="manage reproducible analysis workspaces")
+    analysis_commands = analysis.add_subparsers(dest="command", required=True)
+
+    analysis_init = analysis_commands.add_parser("init", help="create an analysis workspace")
+    analysis_init.add_argument("--root", type=Path, default=Path("notebooks/analyses"))
+    analysis_init.add_argument("--analysis-id", required=True)
+    analysis_init.add_argument("--title", required=True)
+    _add_json(analysis_init)
+
+    analysis_request = analysis_commands.add_parser(
+        "add-request", help="add an immutable follow-up request"
+    )
+    analysis_request.add_argument("--analysis-dir", type=Path, required=True)
+    analysis_request.add_argument("--title", required=True)
+    analysis_request.add_argument("--parent-request", required=True)
+    analysis_request.add_argument("--based-on-run", action="append", required=True)
+    _add_json(analysis_request)
+
+    analysis_start = analysis_commands.add_parser("start-run", help="create a planned run")
+    analysis_start.add_argument("--analysis-dir", type=Path, required=True)
+    analysis_start.add_argument("--request-id", required=True)
+    analysis_start.add_argument("--title")
+    analysis_start.add_argument("--notebook-template", type=Path)
+    _add_json(analysis_start)
+
+    analysis_execute = analysis_commands.add_parser(
+        "execute", help="execute a planned run with Papermill"
+    )
+    analysis_execute.add_argument("--analysis-dir", type=Path, required=True)
+    analysis_execute.add_argument("--run-id", required=True)
+    analysis_execute.add_argument("--parameters-file", type=Path)
+    analysis_execute.add_argument("--kernel")
+    analysis_execute.add_argument("--cwd", type=Path)
+    analysis_execute.add_argument("--start-timeout", type=int, default=60)
+    analysis_execute.add_argument("--execution-timeout", type=int)
+    _add_json(analysis_execute)
+
+    analysis_complete = analysis_commands.add_parser(
+        "complete-run", help="complete a validated executed run"
+    )
+    analysis_complete.add_argument("--analysis-dir", type=Path, required=True)
+    analysis_complete.add_argument("--run-id", required=True)
+    _add_json(analysis_complete)
+
+    analysis_accept = analysis_commands.add_parser(
+        "accept-run", help="accept a completed run into output.md"
+    )
+    analysis_accept.add_argument("--analysis-dir", type=Path, required=True)
+    analysis_accept.add_argument("--run-id", required=True)
+    _add_json(analysis_accept)
+
+    analysis_status = analysis_commands.add_parser(
+        "set-status", help="complete or archive an analysis"
+    )
+    analysis_status.add_argument("--analysis-dir", type=Path, required=True)
+    analysis_status.add_argument(
+        "--status", choices=["completed", "archived"], required=True
+    )
+    _add_json(analysis_status)
+
+    analysis_validate = analysis_commands.add_parser(
+        "validate", help="validate an analysis workspace"
+    )
+    analysis_validate.add_argument("--analysis-dir", type=Path, required=True)
+    analysis_validate.add_argument("--portable", action="store_true")
+    _add_json(analysis_validate)
     return parser
 
 
@@ -280,6 +359,63 @@ def _dispatch(args: argparse.Namespace) -> int:
             for error in result.errors:
                 print(f"error: {error}", file=sys.stderr)
         return 0 if result.valid else NotebookValidationError.exit_code
+    if args.group == "analysis" and args.command == "init":
+        result = initialize_analysis(args.root, args.analysis_id, args.title)
+        _emit(result, args.json, result["analysis_dir"])
+        return 0
+    if args.group == "analysis" and args.command == "add-request":
+        result = add_analysis_request(
+            args.analysis_dir,
+            args.title,
+            args.parent_request,
+            args.based_on_run,
+        )
+        _emit(result, args.json, result["request_id"])
+        return 0
+    if args.group == "analysis" and args.command == "start-run":
+        result = start_analysis_run(
+            args.analysis_dir,
+            args.request_id,
+            title=args.title,
+            notebook_template=args.notebook_template,
+        )
+        _emit(result, args.json, result["run_id"])
+        return 0
+    if args.group == "analysis" and args.command == "execute":
+        result = execute_analysis_run(
+            args.analysis_dir,
+            args.run_id,
+            parameters_file=args.parameters_file,
+            kernel=args.kernel,
+            cwd=args.cwd,
+            start_timeout=args.start_timeout,
+            execution_timeout=args.execution_timeout,
+        )
+        _emit(result, args.json, result["executed_path"])
+        return 0
+    if args.group == "analysis" and args.command == "complete-run":
+        result = complete_analysis_run(args.analysis_dir, args.run_id)
+        _emit(result, args.json, f"{result['run_id']} {result['status']}")
+        return 0
+    if args.group == "analysis" and args.command == "accept-run":
+        result = accept_analysis_run(args.analysis_dir, args.run_id)
+        _emit(result, args.json, f"{result['run_id']} accepted")
+        return 0
+    if args.group == "analysis" and args.command == "set-status":
+        result = set_analysis_status(args.analysis_dir, args.status)
+        _emit(result, args.json, f"{result['analysis_id']} {result['status']}")
+        return 0
+    if args.group == "analysis" and args.command == "validate":
+        result = validate_analysis_workspace(args.analysis_dir, portable=args.portable)
+        if args.json:
+            print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+        elif result.valid:
+            mode = "portable" if args.portable else "strict"
+            print(f"valid ({mode}): {result.path}")
+        else:
+            for error in result.errors:
+                print(f"error: {error}", file=sys.stderr)
+        return 0 if result.valid else AnalysisValidationError.exit_code
     raise RuntimeError(f"unhandled command: {args.group} {getattr(args, 'command', '')}")
 
 
