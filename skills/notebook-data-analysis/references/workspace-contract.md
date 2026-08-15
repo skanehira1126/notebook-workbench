@@ -59,6 +59,7 @@ An archived workspace is terminal and immutable: lifecycle commands cannot add r
 ## Request state
 
 The initial request defines the original question. Follow-up front matter includes `request_id`, `parent_request_id`, and `based_on_runs`. A follow-up must reference at least one completed run. Once analysis begins, treat request files as immutable evidence.
+Packaged request, result, and output templates mark required prompts with `notebook-workbench:required` comments. Remove each marker only after replacing the adjacent prompt with completed content or an explicit `N/A` reason. Lifecycle commands reject unresolved markers at the boundary that consumes the artifact.
 
 ## Run state
 

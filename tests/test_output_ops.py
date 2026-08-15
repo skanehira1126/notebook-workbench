@@ -1,3 +1,5 @@
+import hashlib
+import json
 from pathlib import Path
 
 import nbformat
@@ -30,6 +32,33 @@ def test_save_png_svg_and_html_with_deterministic_names(
     ]
     assert (media / "scores-cell-001-image-png.png").read_bytes().startswith(b"\x89PNG")
     assert (media / "scores-cell-001-image-jpeg.jpg").read_bytes() == b"\xff\xd8\xff\xd9"
+    assert result["outputs"][0]["data"] == {"text/plain": "score  value\nA      0.8"}
+    assert result["outputs"][1]["data"] == {}
+    for item in saved:
+        payload = Path(item["path"]).read_bytes()
+        assert item["bytes"] == len(payload)
+        assert item["sha256"] == hashlib.sha256(payload).hexdigest()
+    serialized = json.dumps(result)
+    assert "iVBORw0KGgo" not in serialized
+    assert "<svg" not in serialized
+    assert "<table>" not in serialized
+
+
+def test_text_output_always_includes_saved_media_paths(
+    executed_notebook: Path, tmp_path: Path
+) -> None:
+    result = get_outputs(
+        executed_notebook,
+        CellSelector(tag="proper-scores"),
+        tmp_path / "media",
+    )
+
+    rendered = render_outputs_text(result)
+
+    assert "score  value" in rendered
+    for output in result["outputs"]:
+        for item in output.get("saved_media", []):
+            assert f"[{item['mime_type']}] {item['path']}" in rendered
 
 
 def test_error_output_and_error_listing(executed_notebook: Path) -> None:

@@ -33,7 +33,7 @@ notebook-workbench analysis init \
   --json
 ```
 
-Open `requests/001-initial.md` and replace every placeholder with the decision question, scope, inputs, definitions, acceptance criteria, and expected deliverables. Treat the request as immutable after work begins; add clarifications as a follow-up request instead.
+Open `requests/001-initial.md` and replace every placeholder with the decision question, scope, inputs, definitions, acceptance criteria, and expected deliverables. Each required section contains a `notebook-workbench:required` marker. Remove a marker only after replacing its adjacent prompt with completed content or an explicit `N/A` plus a reason. `start-run` rejects requests with unresolved markers. Treat the request as immutable after work begins; add clarifications as a follow-up request instead.
 
 Inspect the workspace before planning:
 
@@ -83,6 +83,18 @@ notebook-workbench analysis execute \
 
 The command writes `executed.ipynb`, records digests and execution provenance, and moves the run from `planned` through `running` to `executed` or `failed`. Do not edit either notebook after successful execution. Change the source only by starting another run.
 
+If the command or host stops after the run enters `running`, first confirm that no execution process is still active. Then terminate the stale lifecycle state explicitly:
+
+```bash
+notebook-workbench analysis recover-run \
+  --analysis-dir notebooks/analyses/retention-drop \
+  --run-id run-001 \
+  --reason "host stopped during notebook execution" \
+  --json
+```
+
+This marks only a `running` run as `failed` and preserves any partial `executed.ipynb` as failure evidence. It does not resume Papermill or make that notebook complete. Start a new run before retrying execution.
+
 Inspect outputs and errors with `$notebook-workbench`. The `summary` tag below is only an
 example; use it only when a unique `summary` tag was added during authoring. Otherwise, list the
 executed notebook's cells and select the intended output with `--cell-id <id>`:
@@ -94,14 +106,24 @@ notebook-workbench output get notebooks/analyses/retention-drop/runs/001/execute
 
 ## Record evidence and complete the run
 
-Write `runs/001/result.md` as a run-scoped record. Link claims to notebook cells, tables, charts, or files under `artifacts/`. Put compact, portable evidence needed by a reviewer under `report/` when appropriate.
+Write `runs/001/result.md` as a run-scoped record. Link claims to notebook cells, tables, charts, or files under `artifacts/`. Put compact, portable evidence needed by a reviewer under `report/` when appropriate. Replace every required prompt and remove its marker; `complete-run` rejects a result with unresolved markers.
 
-Set all four `run.yaml` validation fields to `passed` or `failed` based on observed evidence:
+The execution lifecycle owns `clean_execution`; never edit it. Record each agent-reviewed semantic check through the CLI based on observed evidence:
 
-- `clean_execution`
 - `acceptance_criteria`
 - `data_quality`
 - `artifact_links`
+
+```bash
+notebook-workbench analysis set-validation \
+  --analysis-dir notebooks/analyses/retention-drop \
+  --run-id run-001 \
+  --check acceptance_criteria \
+  --result passed \
+  --json
+```
+
+Repeat for `data_quality` and `artifact_links`. The command accepts only `passed` or `failed` and never changes `clean_execution`.
 
 Do not mark a failed check as passed. A run may remain executed or failed and still provide useful evidence.
 `artifact_links` may pass without a separate artifact file when every decision-relevant claim is traceable to durable notebook output and `result.md`; the requirement is evidence traceability, not an arbitrary artifact count.
@@ -117,7 +139,7 @@ notebook-workbench analysis complete-run \
 
 ## Integrate the answer
 
-Update `output.md` with an answer-first synthesis across accepted runs. Include the decision-relevant conclusion, supporting evidence, caveats, and recommended next actions. Reference each run used, for example `run-001`; do not paste an execution transcript.
+Update `output.md` with an answer-first synthesis across accepted runs. Include the decision-relevant conclusion, supporting evidence, caveats, and recommended next actions. Replace every required prompt and remove its marker; `accept-run` rejects an output with unresolved markers. Reference each run used, for example `run-001`; do not paste an execution transcript.
 
 Accept the completed run only after its evidence is reflected in `output.md`:
 
@@ -143,7 +165,7 @@ notebook-workbench analysis add-request \
   --json
 ```
 
-Fill the new request, then start a new run for it. A follow-up reactivates a completed analysis. Preserve prior requests, runs, results, and report revisions as evidence; revise only the cumulative interpretation in `output.md`.
+Fill the new request and remove each required marker, then start a new run for it. A follow-up reactivates a completed analysis. Preserve prior requests, runs, results, and report revisions as evidence; revise only the cumulative interpretation in `output.md`.
 
 ## Close and validate
 

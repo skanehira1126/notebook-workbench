@@ -36,11 +36,19 @@ REQUEST_FILE_PATTERN = re.compile(r"^(\d{3})-(?:initial|follow-up)\.md$")
 RUN_DIR_PATTERN = re.compile(r"^(\d{3})$")
 REQUEST_ID_PATTERN = re.compile(r"^req-(\d{3})$")
 RUN_ID_PATTERN = re.compile(r"^run-(\d{3})$")
+TEMPLATE_SENTINEL_PATTERN = re.compile(
+    r"<!--\s*notebook-workbench:required\s+([a-z0-9.-]+)\s*-->"
+)
 CURRENT_RUN_SCHEMA_VERSION = 2
 ANALYSIS_STATUSES = {"active", "completed", "archived"}
 RUN_STATUSES = {"planned", "running", "executed", "completed", "failed"}
 FINAL_VALIDATION_KEYS = (
     "clean_execution",
+    "acceptance_criteria",
+    "data_quality",
+    "artifact_links",
+)
+SEMANTIC_VALIDATION_KEYS = (
     "acceptance_criteria",
     "data_quality",
     "artifact_links",
@@ -179,6 +187,7 @@ def start_analysis_run(
     request_path = _request_path(analysis_dir, request_id)
     if request_path is None:
         raise SelectionError(f"request does not exist or is ambiguous: {request_id}")
+    _reject_template_sentinels(_load_text(request_path), f"request {request_id}")
     runs_dir = analysis_dir / "runs"
     number = _next_number(list(runs_dir.iterdir()), RUN_DIR_PATTERN)
     run_id = f"run-{number:03d}"
@@ -380,6 +389,99 @@ def execute_analysis_run(
     }
 
 
+def set_run_validation(
+    analysis_dir: Path,
+    run_id: str,
+    check: str,
+    result: str,
+) -> dict[str, Any]:
+    """Record one agent-reviewed semantic validation for an executed or failed run."""
+    if check not in SEMANTIC_VALIDATION_KEYS:
+        raise AnalysisValidationError(
+            "validation check must be acceptance_criteria, data_quality, or artifact_links"
+        )
+    if result not in {"passed", "failed"}:
+        raise AnalysisValidationError("validation result must be passed or failed")
+    analysis_dir = _require_analysis_dir(analysis_dir)
+    _reject_archived_analysis(analysis_dir)
+    run_dir = _run_dir(analysis_dir, run_id)
+    run_path = run_dir / "run.yaml"
+    state = _load_yaml(run_path)
+    if state.get("schema_version") != CURRENT_RUN_SCHEMA_VERSION:
+        raise AnalysisValidationError(
+            f"set-validation requires run schema {CURRENT_RUN_SCHEMA_VERSION}; "
+            "start a new run"
+        )
+    run_status = state.get("status")
+    if run_status not in {"executed", "failed"}:
+        raise AnalysisValidationError(
+            "semantic validation can only be recorded for an executed or failed run; "
+            f"{run_id} is {run_status!r}"
+        )
+    validation = state.get("validation")
+    if not isinstance(validation, dict):
+        raise AnalysisValidationError("run.yaml validation must be a mapping")
+    validation[check] = result
+    _write_yaml_atomic(run_path, state)
+    return {
+        "run_id": run_id,
+        "run_status": run_status,
+        "check": check,
+        "result": result,
+    }
+
+
+def recover_analysis_run(
+    analysis_dir: Path,
+    run_id: str,
+    reason: str,
+) -> dict[str, Any]:
+    """Mark an interrupted running run failed without modifying notebook evidence."""
+    reason = reason.strip()
+    if not reason:
+        raise AnalysisValidationError("recovery reason must be non-empty")
+    analysis_dir = _require_analysis_dir(analysis_dir)
+    _reject_archived_analysis(analysis_dir)
+    run_dir = _run_dir(analysis_dir, run_id)
+    run_path = run_dir / "run.yaml"
+    state = _load_yaml(run_path)
+    if state.get("schema_version") != CURRENT_RUN_SCHEMA_VERSION:
+        raise AnalysisValidationError(
+            f"recover-run requires run schema {CURRENT_RUN_SCHEMA_VERSION}; "
+            "start a new run"
+        )
+    if state.get("status") != "running":
+        raise AnalysisValidationError(
+            f"only a running run can be recovered; {run_id} is {state.get('status')!r}"
+        )
+    validation = state.get("validation")
+    notebook = state.get("notebook")
+    if not isinstance(validation, dict) or not isinstance(notebook, dict):
+        raise AnalysisValidationError(
+            "run.yaml notebook and validation must be mappings"
+        )
+    _, executed_path = _notebook_paths(run_dir, state)
+    executed_sha256 = _sha256(executed_path) if executed_path.is_file() else None
+    finished_at = _now().isoformat(timespec="seconds")
+    state["status"] = "failed"
+    state["finished_at"] = finished_at
+    validation["clean_execution"] = "failed"
+    notebook["executed_sha256"] = executed_sha256
+    state["failure"] = {
+        "message": f"Interrupted execution: {reason}",
+        "failed_step": "execution interrupted",
+    }
+    _write_yaml_atomic(run_path, state)
+    return {
+        "run_id": run_id,
+        "status": "failed",
+        "finished_at": finished_at,
+        "reason": reason,
+        "executed_path": str(executed_path) if executed_sha256 is not None else None,
+        "executed_sha256": executed_sha256,
+    }
+
+
 def complete_analysis_run(analysis_dir: Path, run_id: str) -> dict[str, Any]:
     """Complete an executed run after semantic validations are recorded."""
     analysis_dir = _require_analysis_dir(analysis_dir)
@@ -391,6 +493,10 @@ def complete_analysis_run(analysis_dir: Path, run_id: str) -> dict[str, Any]:
         raise AnalysisValidationError(
             f"only an executed run can be completed; {run_id} is {state.get('status')!r}"
         )
+    _reject_template_sentinels(
+        _load_text(run_dir / "result.md"),
+        f"result for {run_id}",
+    )
     validation = state.get("validation")
     if not isinstance(validation, dict):
         raise AnalysisValidationError("run.yaml validation must be a mapping")
@@ -430,6 +536,7 @@ def accept_analysis_run(analysis_dir: Path, run_id: str) -> dict[str, Any]:
     if not isinstance(request_id, str) or _request_path(analysis_dir, request_id) is None:
         raise AnalysisValidationError(f"run references an invalid request: {request_id!r}")
     output = _load_text(analysis_dir / "output.md")
+    _reject_template_sentinels(output, "output.md")
     if run_id not in output:
         raise AnalysisValidationError(
             f"output.md must reference {run_id} before the run can be accepted"
@@ -1017,6 +1124,17 @@ def _nonpassing_validation_checks(validation: dict[str, Any]) -> list[str]:
         for key in FINAL_VALIDATION_KEYS
         if validation.get(key) != "passed"
     ]
+
+
+def _reject_template_sentinels(text: str, subject: str) -> None:
+    unresolved = sorted(set(TEMPLATE_SENTINEL_PATTERN.findall(text)))
+    if unresolved:
+        raise AnalysisValidationError(
+            f"{subject} still contains required template markers: "
+            + ", ".join(unresolved)
+            + "; replace each prompt with completed content or an explicit N/A reason, "
+            "then remove its marker"
+        )
 
 
 def _validate_title(title: str, subject: str) -> None:

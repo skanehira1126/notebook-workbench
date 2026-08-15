@@ -104,6 +104,7 @@ notebook-workbench output get <executed.ipynb> \
 ```
 
 Expect deterministic PNG, JPEG, SVG, and HTML filenames. Do not interpret a successful `output errors` command with an empty list as a failure.
+When `--save-media` is used, exported MIME payloads are replaced in JSON by compact descriptors containing the path, MIME type, byte count, and SHA-256 digest. Other MIME data remains available, and text mode always prints each saved media path.
 
 ## Respect failure boundaries
 
