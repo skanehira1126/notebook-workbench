@@ -1,14 +1,14 @@
 # Notebook Workbench
 
-Notebook Workbench is a deterministic command-line tool and Codex plugin for creating, inspecting, and editing Jupyter notebooks without manipulating notebook JSON directly. It also manages reproducible analysis workspaces with immutable requests, separate source and executed notebooks, Papermill provenance, run-level evidence, and a cumulative answer-first report.
+Notebook Workbench は、Notebook の JSON を直接操作せずに Jupyter Notebook を作成・検査・編集するための、決定論的なコマンドラインツール兼 Codex プラグインです。また、変更不可のリクエスト、分離されたソース Notebook と実行済み Notebook、Papermill の来歴情報、実行単位の根拠、結論を先に示す累積レポートを備えた、再現可能な分析ワークスペースも管理します。
 
-Ad hoc execution remains outside the structural notebook commands. The `analysis` lifecycle owns Papermill execution so state transitions, digests, and evidence stay consistent.
+Notebook の構造を操作するコマンドは、任意のコード実行を行いません。Papermill による実行は `analysis` ライフサイクルが担い、状態遷移、ダイジェスト、根拠の整合性を保ちます。
 
-## Getting started
+## はじめに
 
-You need Codex or the ChatGPT desktop app, Python 3.11 or newer, and `uv` on macOS or Linux.
+macOS または Linux 上で、Codex または ChatGPT デスクトップアプリ、Python 3.11 以降、`uv` が必要です。
 
-Install both the plugin and CLI:
+プラグインと CLI の両方をインストールします。
 
 ```bash
 codex plugin marketplace add skanehira1126/notebook-workbench
@@ -17,29 +17,29 @@ uv tool install git+https://github.com/skanehira1126/notebook-workbench.git
 notebook-workbench --version
 ```
 
-You can use `codex plugin add` as shown above or install `notebook-workbench` from the Codex Plugin screen. Then open a new task/session. The plugin supplies the agent workflow while the CLI performs deterministic notebook operations; both are required.
+上記のように `codex plugin add` を実行するか、Codex のプラグイン画面から `notebook-workbench` をインストールできます。その後、新しいタスクまたはセッションを開いてください。プラグインはエージェント向けのワークフローを提供し、CLI は Notebook を決定論的に操作します。両方のインストールが必要です。
 
-To update an existing installation:
+既存のインストールを更新するには、次を実行します。
 
 ```bash
 codex plugin marketplace upgrade notebook-workbench
 uv tool upgrade notebook-workbench
 ```
 
-Reinstall the plugin from the Codex Plugin screen after upgrading it, then open a new task/session.
+アップグレード後に Codex のプラグイン画面からプラグインを再インストールし、新しいタスクまたはセッションを開いてください。
 
-For development from a checkout, keep dependencies local to the repository:
+チェックアウトしたソースから開発する場合は、依存関係をリポジトリ内に保持します。
 
 ```bash
 uv sync
 uv run notebook-workbench --version
 ```
 
-The plugin manifest is at `.codex-plugin/plugin.json`; it declares the bundled `notebook-workbench` and `notebook-data-analysis` skills and has no MCP server or app dependency. Installing the plugin does not implicitly install the Python package or create a CLI environment inside the plugin cache.
+プラグインマニフェストは `.codex-plugin/plugin.json` にあります。同梱の `notebook-workbench` スキルと `notebook-data-analysis` スキルを宣言しており、MCP サーバーやアプリには依存しません。プラグインをインストールしても、Python パッケージが暗黙にインストールされたり、プラグインキャッシュ内に CLI 環境が作成されたりすることはありません。
 
-## Reproducible analysis workflow
+## 再現可能な分析ワークフロー
 
-Use `$notebook-data-analysis` when the notebook should answer an evolving analytical question and remain reviewable or rerunnable. Start a workspace and a source run:
+変化していく分析上の問いに Notebook で答え、レビューや再実行が可能な状態を保つ場合は、`$notebook-data-analysis` を使用します。ワークスペースと最初のソース実行を作成します。
 
 ```bash
 notebook-workbench analysis init \
@@ -54,7 +54,7 @@ notebook-workbench analysis start-run \
   --json
 ```
 
-Fill the request, author `runs/001/analysis.ipynb` with the structural commands, then execute without overwriting source:
+リクエストを記入し、構造操作コマンドを使って `runs/001/analysis.ipynb` を作成したら、ソースを上書きせずに実行します。
 
 ```bash
 notebook-workbench analysis execute \
@@ -63,30 +63,30 @@ notebook-workbench analysis execute \
   --json
 ```
 
-Record semantic checks and findings in `run.yaml` and `result.md`, integrate the evidence into `output.md`, then complete and accept the run. Strict validation checks local runtime evidence; `--portable` permits intentionally omitted executed notebooks and runtime artifacts while retaining source and state validation.
+意味的な検査結果と知見を `run.yaml` と `result.md` に記録し、その根拠を `output.md` に統合してから、実行を完了・採用します。厳密な検証ではローカルの実行時根拠を確認します。`--portable` を指定すると、ソースと状態の検証を維持しつつ、意図的に省略した実行済み Notebook と実行時成果物を許容します。
 
-## Safe authoring workflow
+## 安全な作成・編集ワークフロー
 
-Create a new empty source notebook when needed:
+必要に応じて、空のソース Notebook を新規作成します。
 
 ```bash
 notebook-workbench notebook create analysis.ipynb --json
 ```
 
-The default kernel metadata is `python3`, `Python 3`, and `python`. Override it with `--kernel-name`, `--kernel-display-name`, and `--language`. Creation refuses to overwrite an existing path. Cells subsequently added with `cell add` receive unique IDs automatically.
+デフォルトのカーネルメタデータは `python3`、`Python 3`、`python` です。`--kernel-name`、`--kernel-display-name`、`--language` で変更できます。既存のパスは上書きしません。以降、`cell add` で追加するセルには一意な ID が自動的に付与されます。
 
-For an existing notebook, first inspect it and retain its SHA-256:
+既存の Notebook を扱う場合は、まず内容を検査して SHA-256 を控えます。
 
 ```bash
 notebook-workbench cells list analysis.ipynb --json
 notebook-workbench cell get analysis.ipynb --cell-id <cell-id>
 ```
 
-For precise editing, prefer the stable cell ID returned by `cells list`; a tag is not required. Indexes are intentionally read-only selectors because insertion or reordering can change which cell an index denotes.
+正確に編集するには、`cells list` が返す安定したセル ID を使用してください。タグは必須ではありません。挿入や並べ替えによってインデックスが指すセルは変わり得るため、インデックスは意図的に読み取り専用のセレクターとして扱われます。
 
-Notebook Workbench currently requires every cell to already have a unique ID. Do not mutate a legacy ID-less notebook by index or by matching source text. First migrate it with a trusted ID-aware notebook tool, then run `cells list --json` again and confirm that every cell has a unique ID before editing. A dedicated Workbench ID-migration command is not provided in this release.
+現在の Notebook Workbench では、すべてのセルに一意な ID があらかじめ必要です。セル ID のない古い Notebook を、インデックスやソーステキストの一致で変更しないでください。まず信頼できる ID 対応の Notebook ツールで移行し、`cells list --json` を再実行して、すべてのセルに一意な ID があることを確認してから編集します。現行リリースには Workbench 専用の ID 移行コマンドはありません。
 
-Then mutate by cell ID, using the observed digest and requiring a source notebook to be unexecuted:
+次に、確認済みのダイジェストを指定し、ソース Notebook が未実行であることを必須として、セル ID で変更します。
 
 ```bash
 notebook-workbench cell replace analysis.ipynb \
@@ -98,38 +98,38 @@ notebook-workbench cell replace analysis.ipynb \
 notebook-workbench validate analysis.ipynb --source
 ```
 
-Every successful mutation reports the resulting notebook SHA-256 and affected cell ID. A stale `--expected-sha256` fails before writing. Writes use a temporary file in the notebook directory, validate it, recheck the original digest, and atomically replace the real notebook path.
+変更が成功すると、変更後の Notebook の SHA-256 と対象セル ID が報告されます。`--expected-sha256` が古い場合は、書き込み前に失敗します。書き込み時は Notebook と同じディレクトリに一時ファイルを作成して検証し、元ファイルのダイジェストを再確認してから、実ファイルをアトミックに置き換えます。
 
-## Commands
+## コマンド
 
-| Command | Purpose |
+| コマンド | 用途 |
 |---|---|
-| `notebook create NOTEBOOK [kernel options] [--json]` | Create an empty, unexecuted notebook without overwriting an existing path. |
-| `cells list NOTEBOOK [--json]` | List IDs, indexes, types, tags, execution state, output counts, and source digests. |
-| `cell get NOTEBOOK (--cell-id ID\|--tag TAG\|--index N) [--json]` | Read one cell. Text mode emits only source. |
-| `script get NOTEBOOK [selector] [--include-markdown]` | Render a temporary percent-format review view. |
-| `validate NOTEBOOK [--source\|--executed] [--json]` | Validate nbformat and Workbench invariants. |
-| `cell add NOTEBOOK ...` | Add a code, markdown, or raw cell at one explicit position. |
-| `cell replace NOTEBOOK ...` | Replace source while preserving ID, type, tags, and metadata. |
-| `cell remove NOTEBOOK ...` | Remove a cell; a parameters cell needs explicit approval. |
-| `tag add/remove/set NOTEBOOK ...` | Update a selected cell's tags. Use `--cell-tag` when selecting by tag. |
-| `tag rename NOTEBOOK --from OLD --to NEW [--all]` | Rename one matching tag, or all explicitly. |
-| `output get NOTEBOOK selector [--save-media DIR] [--json]` | Read stream, result, display, error, and MIME outputs. |
-| `output errors NOTEBOOK [--json]` | List all error outputs; an error-free notebook returns an empty list and exit code 0. |
-| `analysis init --root ROOT --analysis-id ID --title TITLE` | Create a versioned analysis workspace and initial request. |
-| `analysis add-request ...` | Add an immutable follow-up linked to completed runs. |
-| `analysis start-run ...` | Create an unexecuted source notebook and schema-v2 run record. |
-| `analysis execute ...` | Execute a planned run with Papermill into `executed.ipynb`. |
-| `analysis complete-run ...` | Complete an executed run after semantic and digest checks. |
-| `analysis accept-run ...` | Accept a completed run after integration into `output.md`. |
-| `analysis set-status ...` | Complete or archive a consistent analysis. |
-| `analysis validate ... [--portable]` | Validate workspace identities, state, evidence, notebooks, and digests. |
+| `notebook create NOTEBOOK [kernel options] [--json]` | 既存ファイルを上書きせず、空の未実行 Notebook を作成します。 |
+| `cells list NOTEBOOK [--json]` | ID、インデックス、種類、タグ、実行状態、出力数、ソースダイジェストを一覧表示します。 |
+| `cell get NOTEBOOK (--cell-id ID\|--tag TAG\|--index N) [--json]` | 1 つのセルを読み取ります。テキストモードではソースだけを出力します。 |
+| `script get NOTEBOOK [selector] [--include-markdown]` | レビュー用の一時的な percent 形式表示を生成します。 |
+| `validate NOTEBOOK [--source\|--executed] [--json]` | nbformat と Workbench の不変条件を検証します。 |
+| `cell add NOTEBOOK ...` | コード、Markdown、raw のいずれかのセルを明示した位置に追加します。 |
+| `cell replace NOTEBOOK ...` | ID、種類、タグ、メタデータを維持したままソースを置き換えます。 |
+| `cell remove NOTEBOOK ...` | セルを削除します。parameters セルの削除には明示的な許可が必要です。 |
+| `tag add/remove/set NOTEBOOK ...` | 選択したセルのタグを更新します。タグでセルを選択する場合は `--cell-tag` を使用します。 |
+| `tag rename NOTEBOOK --from OLD --to NEW [--all]` | 一致する 1 つのタグ、または明示的に指定したすべてのタグの名前を変更します。 |
+| `output get NOTEBOOK selector [--save-media DIR] [--json]` | stream、result、display、error、MIME 出力を読み取ります。 |
+| `output errors NOTEBOOK [--json]` | すべてのエラー出力を一覧表示します。エラーがなければ空のリストを返し、終了コードは 0 です。 |
+| `analysis init --root ROOT --analysis-id ID --title TITLE` | バージョン管理された分析ワークスペースと最初のリクエストを作成します。 |
+| `analysis add-request ...` | 完了済みの実行に紐づく変更不可の追加リクエストを作成します。 |
+| `analysis start-run ...` | 未実行のソース Notebook と schema v2 の実行記録を作成します。 |
+| `analysis execute ...` | 計画済みの実行を Papermill で実行し、`executed.ipynb` に出力します。 |
+| `analysis complete-run ...` | 意味的な検査とダイジェスト検査の後、実行を完了状態にします。 |
+| `analysis accept-run ...` | `output.md` への統合後、完了した実行を採用状態にします。 |
+| `analysis set-status ...` | 整合性の取れた分析を完了またはアーカイブします。 |
+| `analysis validate ... [--portable]` | ワークスペースの識別情報、状態、根拠、Notebook、ダイジェストを検証します。 |
 
-Cell add accepts exactly one of `--before-tag`, `--after-tag`, `--before-cell-id`, `--after-cell-id`, or `--append`. Mutation source is read from UTF-8 `--source-file`; omit it to read stdin.
+`cell add` では、`--before-tag`、`--after-tag`、`--before-cell-id`、`--after-cell-id`、`--append` のうち、いずれか 1 つだけを指定します。変更元のソースは UTF-8 の `--source-file` から読み取ります。省略した場合は標準入力から読み取ります。
 
-Replacing changed code source clears only that cell's outputs and execution count. Other cells and top-level metadata are preserved semantically. `--require-unexecuted` rejects a notebook when any code cell has outputs or an execution count.
+コードセルのソースを変更すると、そのセルの出力と実行回数だけが消去されます。他のセルとトップレベルのメタデータは意味的に保持されます。いずれかのコードセルに出力または実行回数がある場合、`--require-unexecuted` は Notebook を拒否します。
 
-## Executed outputs
+## 実行済み出力
 
 ```bash
 notebook-workbench output errors executed.ipynb --json
@@ -137,34 +137,34 @@ notebook-workbench output get executed.ipynb --tag proper-scores
 notebook-workbench output get executed.ipynb --tag plots --save-media /tmp/notebook-media --json
 ```
 
-JSON mode preserves cell and output order and returns full MIME bundles. Media export supports PNG, JPEG, SVG, and HTML with deterministic names derived from the cell ID, output index, and MIME type.
+JSON モードではセルと出力の順序を維持し、完全な MIME バンドルを返します。メディアの書き出しは PNG、JPEG、SVG、HTML に対応し、セル ID、出力インデックス、MIME タイプに基づく決定論的なファイル名を使用します。
 
-## Exit codes
+## 終了コード
 
-| Code | Meaning |
+| コード | 意味 |
 |---:|---|
-| 0 | Success |
-| 2 | CLI argument error |
-| 3 | Missing or ambiguous cell/tag |
-| 4 | SHA-256 conflict |
-| 5 | Invalid notebook or rejected mutation invariant |
-| 6 | File I/O or atomic replace failure |
-| 7 | Analysis notebook execution failure |
+| 0 | 成功 |
+| 2 | CLI 引数エラー |
+| 3 | セルまたはタグが存在しない、もしくは一意に特定できない |
+| 4 | SHA-256 の競合 |
+| 5 | 無効な Notebook、または変更時の不変条件違反 |
+| 6 | ファイル I/O またはアトミック置換の失敗 |
+| 7 | 分析 Notebook の実行失敗 |
 
-Command errors go to stderr. With `--json`, stderr contains a stable object with `error.code` and `error.message`. A completed `validate --json` check reports its validation result on stdout even when `valid` is `false`; in that case the process exits with code 5.
+コマンドのエラーは標準エラー出力へ送られます。`--json` を指定すると、標準エラー出力には `error.code` と `error.message` を含む安定したオブジェクトが出力されます。`validate --json` の検査が完了した場合、`valid` が `false` でも検証結果は標準出力へ報告されます。その場合、プロセスは終了コード 5 で終了します。
 
 ## Python API
 
-The CLI is an adapter over typed functions in `notebook_workbench.notebook_ops`, `notebook_workbench.output_ops`, and `notebook_workbench.analysis_ops`. Notebook mutation remains independent from analysis lifecycle logic; the analysis domain is the sole owner of Papermill execution and workspace state.
+CLI は、`notebook_workbench.notebook_ops`、`notebook_workbench.output_ops`、`notebook_workbench.analysis_ops` にある型付き関数へのアダプターです。Notebook の変更処理は分析ライフサイクルのロジックから独立しており、Papermill の実行とワークスペースの状態は分析ドメインだけが管理します。
 
-## Development and validation
+## 開発と検証
 
 ```bash
 uv sync
 uv run tox
 ```
 
-`tox` is the single test entry point. Its default environments run pytest with coverage on Python 3.11, 3.12, and 3.13, followed by Ruff and the official Codex skill/plugin validators. Run one environment or pass pytest selectors when iterating:
+`tox` が唯一のテスト実行入口です。デフォルトの環境では、Python 3.11、3.12、3.13 上でカバレッジ付きの pytest を実行し、続いて Ruff と公式の Codex スキル／プラグイン検証ツールを実行します。反復開発では、環境を 1 つ指定するか、pytest のセレクターを渡せます。
 
 ```bash
 uv run tox -e py313
@@ -173,6 +173,6 @@ uv run tox -e codex
 uv run tox -e py313 -- tests/test_cli.py
 ```
 
-GitHub Actions uses the same tox environments across Python 3.11–3.13 on Linux and macOS. The `codex` environment remains a local plugin-development check because it requires Codex's system skill validators to be installed.
+GitHub Actions でも、Linux と macOS 上の Python 3.11〜3.13 に対して同じ tox 環境を使用します。`codex` 環境では Codex のシステムスキル検証ツールがインストールされている必要があるため、引き続きローカルでのプラグイン開発用検査として扱います。
 
-The test suite covers notebook creation, stable cell IDs, legacy ID-less rejection, read selectors, source validation, atomic mutation invariants, SHA conflicts, symlinks and traversal rejection, tag operations, output types and media, analysis state transitions, real Papermill execution, portable and strict workspace validation, CLI JSON/text separation, exit codes, and plugin shape.
+テストスイートは、Notebook の作成、安定したセル ID、セル ID のない古い Notebook の拒否、読み取りセレクター、ソース検証、アトミックな変更の不変条件、SHA 競合、シンボリックリンクとパストラバーサルの拒否、タグ操作、出力形式とメディア、分析の状態遷移、実際の Papermill 実行、ポータブルおよび厳密なワークスペース検証、CLI の JSON／テキスト出力分離、終了コード、プラグイン構成を対象としています。
