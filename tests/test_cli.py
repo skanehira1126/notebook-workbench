@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import nbformat
@@ -6,6 +7,18 @@ import yaml
 
 from notebook_workbench import analysis_ops
 from notebook_workbench.cli import main
+
+
+def _resolve_template_markers(path: Path) -> None:
+    text = path.read_text(encoding="utf-8")
+    path.write_text(
+        re.sub(
+            r"<!--\s*notebook-workbench:required\s+[a-z0-9.-]+\s*-->",
+            "",
+            text,
+        ),
+        encoding="utf-8",
+    )
 
 
 def test_cells_list_json(source_notebook: Path, capsys) -> None:
@@ -199,6 +212,7 @@ def test_analysis_cli_runs_complete_lifecycle(tmp_path: Path, monkeypatch, capsy
         == 0
     )
     analysis_dir = Path(json.loads(capsys.readouterr().out)["analysis_dir"])
+    _resolve_template_markers(analysis_dir / "requests" / "001-initial.md")
 
     assert (
         main(
@@ -217,6 +231,7 @@ def test_analysis_cli_runs_complete_lifecycle(tmp_path: Path, monkeypatch, capsy
         == 0
     )
     assert json.loads(capsys.readouterr().out)["run_id"] == "run-001"
+    _resolve_template_markers(analysis_dir / "runs" / "001" / "result.md")
 
     def fake_execute(*, input_path, output_path, **_):
         nbformat.write(nbformat.read(input_path, as_version=4), output_path)
@@ -238,16 +253,28 @@ def test_analysis_cli_runs_complete_lifecycle(tmp_path: Path, monkeypatch, capsy
     )
     assert json.loads(capsys.readouterr().out)["status"] == "executed"
 
-    run_path = analysis_dir / "runs" / "001" / "run.yaml"
-    run = yaml.safe_load(run_path.read_text(encoding="utf-8"))
-    run["validation"].update(
-        {
-            "acceptance_criteria": "passed",
-            "data_quality": "passed",
-            "artifact_links": "passed",
-        }
-    )
-    run_path.write_text(yaml.safe_dump(run, sort_keys=False), encoding="utf-8")
+    for check in ("acceptance_criteria", "data_quality", "artifact_links"):
+        assert (
+            main(
+                [
+                    "analysis",
+                    "set-validation",
+                    "--analysis-dir",
+                    str(analysis_dir),
+                    "--run-id",
+                    "run-001",
+                    "--check",
+                    check,
+                    "--result",
+                    "passed",
+                    "--json",
+                ]
+            )
+            == 0
+        )
+        validation = json.loads(capsys.readouterr().out)
+        assert validation["check"] == check
+        assert validation["result"] == "passed"
     assert (
         main(
             [
@@ -265,6 +292,7 @@ def test_analysis_cli_runs_complete_lifecycle(tmp_path: Path, monkeypatch, capsy
     assert json.loads(capsys.readouterr().out)["status"] == "completed"
 
     output = analysis_dir / "output.md"
+    _resolve_template_markers(output)
     output.write_text(output.read_text(encoding="utf-8") + "\nEvidence: run-001\n", encoding="utf-8")
     assert (
         main(
@@ -334,6 +362,49 @@ def test_analysis_cli_runs_complete_lifecycle(tmp_path: Path, monkeypatch, capsy
     assert json.loads(capsys.readouterr().out)["valid"] is True
 
 
+def test_analysis_cli_rejects_unresolved_request_template_markers(
+    tmp_path: Path, capsys
+) -> None:
+    root = tmp_path / "analyses"
+    assert (
+        main(
+            [
+                "analysis",
+                "init",
+                "--root",
+                str(root),
+                "--analysis-id",
+                "unresolved",
+                "--title",
+                "Unresolved",
+            ]
+        )
+        == 0
+    )
+    analysis_dir = root / "unresolved"
+    capsys.readouterr()
+
+    assert (
+        main(
+            [
+                "analysis",
+                "start-run",
+                "--analysis-dir",
+                str(analysis_dir),
+                "--request-id",
+                "req-001",
+                "--json",
+            ]
+        )
+        == 5
+    )
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    error = json.loads(captured.err)["error"]
+    assert error["code"] == "analysis_invalid"
+    assert "request.background" in error["message"]
+
+
 def test_analysis_cli_validation_failure_and_execution_error_are_stable_json(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
@@ -341,6 +412,7 @@ def test_analysis_cli_validation_failure_and_execution_error_are_stable_json(
     assert main(["analysis", "init", "--root", str(root), "--analysis-id", "broken", "--title", "Broken"]) == 0
     analysis_dir = root / "broken"
     capsys.readouterr()
+    _resolve_template_markers(analysis_dir / "requests" / "001-initial.md")
     assert main(["analysis", "start-run", "--analysis-dir", str(analysis_dir), "--request-id", "req-001"]) == 0
     capsys.readouterr()
 
@@ -373,3 +445,129 @@ def test_analysis_cli_validation_failure_and_execution_error_are_stable_json(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert json.loads(captured.err)["error"]["code"] == "analysis_execution_failed"
+
+
+def test_analysis_cli_recovers_interrupted_run_with_stable_json(
+    tmp_path: Path, capsys
+) -> None:
+    root = tmp_path / "analyses"
+    assert (
+        main(
+            [
+                "analysis",
+                "init",
+                "--root",
+                str(root),
+                "--analysis-id",
+                "stale",
+                "--title",
+                "Stale",
+            ]
+        )
+        == 0
+    )
+    analysis_dir = root / "stale"
+    capsys.readouterr()
+    _resolve_template_markers(analysis_dir / "requests" / "001-initial.md")
+    assert (
+        main(
+            [
+                "analysis",
+                "start-run",
+                "--analysis-dir",
+                str(analysis_dir),
+                "--request-id",
+                "req-001",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    run_path = analysis_dir / "runs" / "001" / "run.yaml"
+    run = yaml.safe_load(run_path.read_text(encoding="utf-8"))
+    run["status"] = "running"
+    run["validation"]["clean_execution"] = "running"
+    run_path.write_text(yaml.safe_dump(run, sort_keys=False), encoding="utf-8")
+
+    assert (
+        main(
+            [
+                "analysis",
+                "recover-run",
+                "--analysis-dir",
+                str(analysis_dir),
+                "--run-id",
+                "run-001",
+                "--reason",
+                "kernel process disappeared",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["run_id"] == "run-001"
+    assert payload["status"] == "failed"
+    assert payload["reason"] == "kernel process disappeared"
+
+    assert (
+        main(
+            [
+                "analysis",
+                "recover-run",
+                "--analysis-dir",
+                str(analysis_dir),
+                "--run-id",
+                "run-001",
+                "--reason",
+                "again",
+                "--json",
+            ]
+        )
+        == 5
+    )
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert json.loads(captured.err)["error"]["code"] == "analysis_invalid"
+
+
+def test_analysis_cli_requires_recovery_reason(tmp_path: Path, capsys) -> None:
+    code = main(
+        [
+            "analysis",
+            "recover-run",
+            "--analysis-dir",
+            str(tmp_path),
+            "--run-id",
+            "run-001",
+            "--json",
+        ]
+    )
+    captured = capsys.readouterr()
+    assert code == 2
+    assert captured.out == ""
+    assert json.loads(captured.err)["error"]["code"] == "cli_argument_error"
+
+
+def test_analysis_cli_rejects_owned_execution_validation(
+    tmp_path: Path, capsys
+) -> None:
+    code = main(
+        [
+            "analysis",
+            "set-validation",
+            "--analysis-dir",
+            str(tmp_path),
+            "--run-id",
+            "run-001",
+            "--check",
+            "clean_execution",
+            "--result",
+            "failed",
+            "--json",
+        ]
+    )
+    captured = capsys.readouterr()
+    assert code == 2
+    assert captured.out == ""
+    assert json.loads(captured.err)["error"]["code"] == "cli_argument_error"

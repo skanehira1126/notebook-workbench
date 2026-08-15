@@ -1,6 +1,7 @@
 """Extraction and deterministic export of executed notebook outputs."""
 
 import base64
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -80,11 +81,10 @@ def render_outputs_text(result: dict[str, Any]) -> str:
             data = output.get("data", {})
             if "text/plain" in data:
                 lines.append(str(data["text/plain"]))
-            elif output.get("saved_media"):
-                for item in output["saved_media"]:
-                    lines.append(f"[{item['mime_type']}] {item['path']}")
             else:
                 lines.extend(f"[{mime_type}]" for mime_type in data)
+            for item in output.get("saved_media", []):
+                lines.append(f"[{item['mime_type']}] {item['path']}")
     return "\n".join(line.rstrip("\n") for line in lines) + ("\n" if lines else "")
 
 
@@ -110,7 +110,7 @@ def _extract_outputs(cell: NotebookNode, save_media: Path | None) -> list[dict[s
                 }
             )
         elif output.output_type in {"execute_result", "display_data"}:
-            item["data"] = _normalize(dict(output.data))
+            data = _normalize(dict(output.data))
             item["metadata"] = _normalize(dict(output.metadata))
             if output.output_type == "execute_result":
                 item["execution_count"] = output.execution_count
@@ -118,14 +118,17 @@ def _extract_outputs(cell: NotebookNode, save_media: Path | None) -> list[dict[s
                 saved = _save_media_bundle(save_media, cell.id, output_index, output.data)
                 if saved:
                     item["saved_media"] = saved
+                    for saved_item in saved:
+                        data.pop(saved_item["mime_type"], None)
+            item["data"] = data
         results.append(item)
     return results
 
 
 def _save_media_bundle(
     directory: Path, cell_id: str, output_index: int, data: NotebookNode
-) -> list[dict[str, str]]:
-    saved: list[dict[str, str]] = []
+) -> list[dict[str, str | int]]:
+    saved: list[dict[str, str | int]] = []
     safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", cell_id)
     for mime_type, extension in MEDIA_EXTENSIONS.items():
         if mime_type not in data:
@@ -136,12 +139,21 @@ def _save_media_bundle(
         try:
             if mime_type in {"image/png", "image/jpeg"}:
                 encoded = "".join(str(value).split())
-                destination.write_bytes(base64.b64decode(encoded, validate=True))
+                payload = base64.b64decode(encoded, validate=True)
+                destination.write_bytes(payload)
             else:
-                destination.write_text(str(value), encoding="utf-8")
+                payload = str(value).encode()
+                destination.write_bytes(payload)
         except (OSError, ValueError) as error:
             raise WorkbenchIOError(f"could not save {mime_type} output to {destination}: {error}") from error
-        saved.append({"mime_type": mime_type, "path": str(destination)})
+        saved.append(
+            {
+                "mime_type": mime_type,
+                "path": str(destination),
+                "bytes": len(payload),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            }
+        )
     return saved
 
 

@@ -54,7 +54,7 @@ notebook-workbench analysis start-run \
   --json
 ```
 
-リクエストを記入し、構造操作コマンドを使って `runs/001/analysis.ipynb` を作成したら、ソースを上書きせずに実行します。
+リクエストを記入し、各必須項目の `notebook-workbench:required` markerを、内容または理由付きの `N/A` へ置き換えてからrunを開始します。構造操作コマンドを使って `runs/001/analysis.ipynb` を作成したら、ソースを上書きせずに実行します。
 
 ```bash
 notebook-workbench analysis execute \
@@ -63,7 +63,7 @@ notebook-workbench analysis execute \
   --json
 ```
 
-意味的な検査結果と知見を `run.yaml` と `result.md` に記録し、その根拠を `output.md` に統合してから、実行を完了・採用します。厳密な検証ではローカルの実行時根拠を確認します。`--portable` を指定すると、ソースと状態の検証を維持しつつ、意図的に省略した実行済み Notebook と実行時成果物を許容します。
+意味的な検査結果は `analysis set-validation` で記録し、知見を `result.md`、統合した根拠を `output.md` に記載します。各必須promptを置き換えてmarkerを除去しない限り、実行の完了・採用は拒否されます。実行中にホストやコマンドが停止した場合は、実行プロセスが残っていないことを確認してから `analysis recover-run` で run を失敗状態へ閉じます。厳密な検証ではローカルの実行時根拠を確認します。`--portable` を指定すると、ソースと状態の検証を維持しつつ、意図的に省略した実行済み Notebook と実行時成果物を許容します。
 
 ## 安全な作成・編集ワークフロー
 
@@ -120,6 +120,8 @@ notebook-workbench validate analysis.ipynb --source
 | `analysis add-request ...` | 完了済みの実行に紐づく変更不可の追加リクエストを作成します。 |
 | `analysis start-run ...` | 未実行のソース Notebook と schema v2 の実行記録を作成します。 |
 | `analysis execute ...` | 計画済みの実行を Papermill で実行し、`executed.ipynb` に出力します。 |
+| `analysis set-validation ...` | 実行ライフサイクルが管理する `clean_execution` を除き、意味検証結果を安全に記録します。 |
+| `analysis recover-run ...` | 中断後に残った `running` run を、理由付きで失敗状態へ閉じます。 |
 | `analysis complete-run ...` | 意味的な検査とダイジェスト検査の後、実行を完了状態にします。 |
 | `analysis accept-run ...` | `output.md` への統合後、完了した実行を採用状態にします。 |
 | `analysis set-status ...` | 整合性の取れた分析を完了またはアーカイブします。 |
@@ -137,7 +139,7 @@ notebook-workbench output get executed.ipynb --tag proper-scores
 notebook-workbench output get executed.ipynb --tag plots --save-media /tmp/notebook-media --json
 ```
 
-JSON モードではセルと出力の順序を維持し、完全な MIME バンドルを返します。メディアの書き出しは PNG、JPEG、SVG、HTML に対応し、セル ID、出力インデックス、MIME タイプに基づく決定論的なファイル名を使用します。
+JSON モードではセルと出力の順序を維持し、`--save-media` を指定しない場合は完全な MIME バンドルを返します。メディアの書き出しは PNG、JPEG、SVG、HTML に対応し、セル ID、出力インデックス、MIME タイプに基づく決定論的なファイル名を使用します。`--save-media` を指定した場合、書き出した MIME の raw payload は JSON から除かれ、path、MIME type、byte count、SHA-256 digest の compact descriptor が `saved_media` に返ります。他の MIME data は保持され、text mode でも保存した各 path を表示します。
 
 ## 終了コード
 

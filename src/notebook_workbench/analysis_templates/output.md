@@ -2,14 +2,17 @@
 
 ## Analysis objective
 
+<!-- notebook-workbench:required output.objective -->
 Summarize the overall objective from the accepted requests.
 
 ## Current conclusions
 
+<!-- notebook-workbench:required output.conclusions -->
 State the current integrated conclusions from all accepted completed runs, ordered by importance.
 
 ## Answers to analysis questions
 
+<!-- notebook-workbench:required output.answers -->
 ### Question 1
 
 State the current answer and interpretation.
@@ -25,6 +28,7 @@ Include findings that materially support the objective but do not map directly t
 
 ## Data and evidence coverage
 
+<!-- notebook-workbench:required output.coverage -->
 - Population:
 - Time period:
 - Unit of analysis:
@@ -32,6 +36,7 @@ Include findings that materially support the objective but do not map directly t
 
 ## Limitations and unresolved questions
 
+<!-- notebook-workbench:required output.limitations -->
 State applicability limits, data-quality issues, contradictory evidence, and unresolved questions.
 
 ## Worthwhile follow-up analysis

@@ -1,4 +1,5 @@
 import hashlib
+import re
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +14,9 @@ from notebook_workbench.analysis_ops import (
     complete_analysis_run,
     execute_analysis_run,
     initialize_analysis,
+    recover_analysis_run,
     set_analysis_status,
+    set_run_validation,
     start_analysis_run,
     validate_analysis_workspace,
 )
@@ -36,9 +39,24 @@ def _write_yaml(path: Path, value: dict[str, Any]) -> None:
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
 
 
+def _resolve_template_markers(path: Path) -> None:
+    text = path.read_text(encoding="utf-8")
+    path.write_text(
+        re.sub(
+            r"<!--\s*notebook-workbench:required\s+[a-z0-9.-]+\s*-->",
+            "",
+            text,
+        ),
+        encoding="utf-8",
+    )
+
+
 def _analysis(tmp_path: Path) -> Path:
     result = initialize_analysis(tmp_path, "retention-drop", "Retention drop")
-    return Path(result["analysis_dir"])
+    analysis_dir = Path(result["analysis_dir"])
+    _resolve_template_markers(analysis_dir / "requests" / "001-initial.md")
+    _resolve_template_markers(analysis_dir / "output.md")
+    return analysis_dir
 
 
 def _fake_execute(
@@ -54,21 +72,16 @@ def _start_and_execute(
 ) -> tuple[Path, Path]:
     analysis_dir = _analysis(tmp_path)
     start_analysis_run(analysis_dir, "req-001")
+    _resolve_template_markers(analysis_dir / "runs" / "001" / "result.md")
     monkeypatch.setattr(analysis_ops.papermill, "execute_notebook", _fake_execute)
     execute_analysis_run(analysis_dir, "run-001")
     return analysis_dir, analysis_dir / "runs" / "001"
 
 
 def _pass_semantic_checks(run_dir: Path) -> None:
-    run = _load_yaml(run_dir / "run.yaml")
-    run["validation"].update(
-        {
-            "acceptance_criteria": "passed",
-            "data_quality": "passed",
-            "artifact_links": "passed",
-        }
-    )
-    _write_yaml(run_dir / "run.yaml", run)
+    analysis_dir = run_dir.parent.parent
+    for check in ("acceptance_criteria", "data_quality", "artifact_links"):
+        set_run_validation(analysis_dir, "run-001", check, "passed")
 
 
 def _complete_and_accept(analysis_dir: Path, run_dir: Path) -> None:
@@ -104,6 +117,42 @@ def test_initialize_analysis_creates_valid_workspace_and_refuses_bad_inputs(
 
     quoted = initialize_analysis(tmp_path, "quoted-title", 'A "quoted" title')
     assert _load_yaml(Path(quoted["analysis_dir"]) / "analysis.yaml")["title"] == 'A "quoted" title'
+
+
+def test_lifecycle_rejects_unresolved_required_template_markers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    initialized = initialize_analysis(tmp_path, "marker-check", "Marker check")
+    analysis_dir = Path(initialized["analysis_dir"])
+    request_path = analysis_dir / "requests" / "001-initial.md"
+
+    with pytest.raises(AnalysisValidationError, match="request.background"):
+        start_analysis_run(analysis_dir, "req-001")
+
+    _resolve_template_markers(request_path)
+    start_analysis_run(analysis_dir, "req-001")
+    monkeypatch.setattr(analysis_ops.papermill, "execute_notebook", _fake_execute)
+    execute_analysis_run(analysis_dir, "run-001")
+    for check in ("acceptance_criteria", "data_quality", "artifact_links"):
+        set_run_validation(analysis_dir, "run-001", check, "passed")
+
+    with pytest.raises(AnalysisValidationError, match="result.summary"):
+        complete_analysis_run(analysis_dir, "run-001")
+
+    result_path = analysis_dir / "runs" / "001" / "result.md"
+    _resolve_template_markers(result_path)
+    complete_analysis_run(analysis_dir, "run-001")
+    output_path = analysis_dir / "output.md"
+    output_path.write_text(
+        output_path.read_text(encoding="utf-8") + "\nEvidence: run-001\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(AnalysisValidationError, match="output.objective"):
+        accept_analysis_run(analysis_dir, "run-001")
+
+    _resolve_template_markers(output_path)
+    assert accept_analysis_run(analysis_dir, "run-001")["output_revision"] == 1
 
 
 def test_start_run_creates_source_and_clears_template_outputs(tmp_path: Path) -> None:
@@ -283,6 +332,89 @@ def test_execute_failure_is_persisted(
     assert run["validation"]["clean_execution"] == "failed"
     assert run["failure"]["failed_step"] == "analysis.ipynb cell 4"
     assert "CellFailure: boom" in run["failure"]["message"]
+
+
+def test_set_validation_updates_only_agent_reviewed_checks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    analysis_dir, run_dir = _start_and_execute(tmp_path, monkeypatch)
+
+    result = set_run_validation(
+        analysis_dir, "run-001", "data_quality", "failed"
+    )
+    run = _load_yaml(run_dir / "run.yaml")
+
+    assert result == {
+        "run_id": "run-001",
+        "run_status": "executed",
+        "check": "data_quality",
+        "result": "failed",
+    }
+    assert run["validation"]["data_quality"] == "failed"
+    assert run["validation"]["clean_execution"] == "passed"
+
+    with pytest.raises(AnalysisValidationError, match="validation check"):
+        set_run_validation(analysis_dir, "run-001", "clean_execution", "failed")
+    with pytest.raises(AnalysisValidationError, match="validation result"):
+        set_run_validation(analysis_dir, "run-001", "data_quality", "unknown")
+
+
+def test_set_validation_rejects_unreviewable_run_status(tmp_path: Path) -> None:
+    analysis_dir = _analysis(tmp_path)
+    start_analysis_run(analysis_dir, "req-001")
+
+    with pytest.raises(AnalysisValidationError, match="executed or failed"):
+        set_run_validation(analysis_dir, "run-001", "data_quality", "passed")
+
+
+def test_recover_running_run_preserves_partial_notebook_and_allows_new_run(
+    tmp_path: Path,
+) -> None:
+    analysis_dir = _analysis(tmp_path)
+    start_analysis_run(analysis_dir, "req-001")
+    run_dir = analysis_dir / "runs" / "001"
+    run_path = run_dir / "run.yaml"
+    run = _load_yaml(run_path)
+    run["status"] = "running"
+    run["started_at"] = "2026-08-15T10:00:00+09:00"
+    run["validation"]["clean_execution"] = "running"
+    _write_yaml(run_path, run)
+    executed_path = run_dir / "executed.ipynb"
+    partial = nbformat.v4.new_notebook(
+        cells=[nbformat.v4.new_code_cell("partial = True")]
+    )
+    nbformat.write(partial, executed_path)
+    partial_notebook = executed_path.read_bytes()
+
+    result = recover_analysis_run(
+        analysis_dir, "run-001", "host stopped during execution"
+    )
+    recovered = _load_yaml(run_path)
+
+    assert result["status"] == "failed"
+    assert result["reason"] == "host stopped during execution"
+    assert result["executed_path"] == str(executed_path)
+    assert executed_path.read_bytes() == partial_notebook
+    assert recovered["validation"]["clean_execution"] == "failed"
+    assert recovered["failure"] == {
+        "message": "Interrupted execution: host stopped during execution",
+        "failed_step": "execution interrupted",
+    }
+    assert recovered["notebook"]["executed_sha256"] == hashlib.sha256(
+        partial_notebook
+    ).hexdigest()
+    assert validate_analysis_workspace(analysis_dir).valid
+    assert start_analysis_run(analysis_dir, "req-001")["run_id"] == "run-002"
+
+
+def test_recover_requires_running_status_and_reason(tmp_path: Path) -> None:
+    analysis_dir = _analysis(tmp_path)
+    start_analysis_run(analysis_dir, "req-001")
+
+    with pytest.raises(AnalysisValidationError, match="reason"):
+        recover_analysis_run(analysis_dir, "run-001", "  ")
+    with pytest.raises(AnalysisValidationError, match="only a running run"):
+        recover_analysis_run(analysis_dir, "run-001", "operator confirmed interruption")
 
 
 def test_complete_accept_status_and_follow_up_lifecycle(

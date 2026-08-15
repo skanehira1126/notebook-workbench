@@ -13,7 +13,9 @@ from .analysis_ops import (
     complete_analysis_run,
     execute_analysis_run,
     initialize_analysis,
+    recover_analysis_run,
     set_analysis_status,
+    set_run_validation,
     start_analysis_run,
     validate_analysis_workspace,
 )
@@ -176,6 +178,29 @@ def build_parser() -> argparse.ArgumentParser:
     analysis_execute.add_argument("--start-timeout", type=int, default=60)
     analysis_execute.add_argument("--execution-timeout", type=int)
     _add_json(analysis_execute)
+
+    analysis_validation = analysis_commands.add_parser(
+        "set-validation", help="record a semantic validation result"
+    )
+    analysis_validation.add_argument("--analysis-dir", type=Path, required=True)
+    analysis_validation.add_argument("--run-id", required=True)
+    analysis_validation.add_argument(
+        "--check",
+        choices=["acceptance_criteria", "data_quality", "artifact_links"],
+        required=True,
+    )
+    analysis_validation.add_argument(
+        "--result", choices=["passed", "failed"], required=True
+    )
+    _add_json(analysis_validation)
+
+    analysis_recover = analysis_commands.add_parser(
+        "recover-run", help="mark an interrupted running run as failed"
+    )
+    analysis_recover.add_argument("--analysis-dir", type=Path, required=True)
+    analysis_recover.add_argument("--run-id", required=True)
+    analysis_recover.add_argument("--reason", required=True)
+    _add_json(analysis_recover)
 
     analysis_complete = analysis_commands.add_parser(
         "complete-run", help="complete a validated executed run"
@@ -392,6 +417,19 @@ def _dispatch(args: argparse.Namespace) -> int:
             execution_timeout=args.execution_timeout,
         )
         _emit(result, args.json, result["executed_path"])
+        return 0
+    if args.group == "analysis" and args.command == "set-validation":
+        result = set_run_validation(
+            args.analysis_dir,
+            args.run_id,
+            args.check,
+            args.result,
+        )
+        _emit(result, args.json, f"{result['run_id']} {result['check']} {result['result']}")
+        return 0
+    if args.group == "analysis" and args.command == "recover-run":
+        result = recover_analysis_run(args.analysis_dir, args.run_id, args.reason)
+        _emit(result, args.json, f"{result['run_id']} {result['status']}")
         return 0
     if args.group == "analysis" and args.command == "complete-run":
         result = complete_analysis_run(args.analysis_dir, args.run_id)
