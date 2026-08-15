@@ -83,7 +83,9 @@ notebook-workbench analysis execute \
 
 The command writes `executed.ipynb`, records digests and execution provenance, and moves the run from `planned` through `running` to `executed` or `failed`. Do not edit either notebook after successful execution. Change the source only by starting another run.
 
-Inspect outputs and errors with `$notebook-workbench`:
+Inspect outputs and errors with `$notebook-workbench`. The `summary` tag below is only an
+example; use it only when a unique `summary` tag was added during authoring. Otherwise, list the
+executed notebook's cells and select the intended output with `--cell-id <id>`:
 
 ```bash
 notebook-workbench output errors notebooks/analyses/retention-drop/runs/001/executed.ipynb --json

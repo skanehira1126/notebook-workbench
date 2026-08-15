@@ -12,7 +12,7 @@ def test_manifest_declares_only_existing_skill_component() -> None:
     assert "apps" not in manifest
     assert (ROOT / "skills" / "notebook-workbench" / "SKILL.md").is_file()
     assert (ROOT / "skills" / "notebook-data-analysis" / "SKILL.md").is_file()
-    assert manifest["version"] == "0.2.0"
+    assert manifest["version"] == "0.2.1"
 
 
 def test_marketplace_exposes_root_plugin() -> None:
