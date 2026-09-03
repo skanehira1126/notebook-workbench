@@ -26,6 +26,7 @@ from .errors import (
     WorkbenchError,
     WorkbenchIOError,
 )
+from .execution_runners import DEFAULT_DOCKER_IMAGE
 from .notebook_ops import (
     AddCellRequest,
     CellSelector,
@@ -177,6 +178,32 @@ def build_parser() -> argparse.ArgumentParser:
     analysis_execute.add_argument("--cwd", type=Path)
     analysis_execute.add_argument("--start-timeout", type=int, default=60)
     analysis_execute.add_argument("--execution-timeout", type=int)
+    analysis_execute.add_argument(
+        "--runner", choices=["local", "docker"], default="local"
+    )
+    analysis_execute.add_argument(
+        "--project-root", type=Path, help="project containing pyproject.toml and uv.lock"
+    )
+    analysis_execute.add_argument(
+        "--docker-image",
+        help=f"Docker image (default: {DEFAULT_DOCKER_IMAGE})",
+    )
+    analysis_execute.add_argument("--memory", help="required Docker memory limit")
+    analysis_execute.add_argument(
+        "--memory-swap", help="Docker memory plus swap limit (defaults to --memory)"
+    )
+    analysis_execute.add_argument(
+        "--mount",
+        dest="mounts",
+        action="append",
+        help="repeatable SOURCE:TARGET[:ro|rw] bind mount (default: ro)",
+    )
+    analysis_execute.add_argument(
+        "--env",
+        dest="environment_variables",
+        action="append",
+        help="repeatable KEY=VALUE container environment variable",
+    )
     _add_json(analysis_execute)
 
     analysis_validation = analysis_commands.add_parser(
@@ -407,6 +434,7 @@ def _dispatch(args: argparse.Namespace) -> int:
         _emit(result, args.json, result["run_id"])
         return 0
     if args.group == "analysis" and args.command == "execute":
+        _validate_execute_runner_options(args)
         result = execute_analysis_run(
             args.analysis_dir,
             args.run_id,
@@ -415,6 +443,13 @@ def _dispatch(args: argparse.Namespace) -> int:
             cwd=args.cwd,
             start_timeout=args.start_timeout,
             execution_timeout=args.execution_timeout,
+            runner=args.runner,
+            project_root=args.project_root,
+            docker_image=args.docker_image,
+            memory=args.memory,
+            memory_swap=args.memory_swap,
+            mounts=args.mounts,
+            environment_variables=args.environment_variables,
         )
         _emit(result, args.json, result["executed_path"])
         return 0
@@ -459,6 +494,26 @@ def _dispatch(args: argparse.Namespace) -> int:
 
 def _add_json(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--json", action="store_true")
+
+
+def _validate_execute_runner_options(args: argparse.Namespace) -> None:
+    if args.runner == "docker":
+        if args.memory is None:
+            raise CLIUsageError("--memory is required with --runner docker")
+        return
+    docker_options = {
+        "--project-root": args.project_root,
+        "--docker-image": args.docker_image,
+        "--memory": args.memory,
+        "--memory-swap": args.memory_swap,
+        "--mount": args.mounts,
+        "--env": args.environment_variables,
+    }
+    supplied = [name for name, value in docker_options.items() if value]
+    if supplied:
+        raise CLIUsageError(
+            "Docker options require --runner docker: " + ", ".join(supplied)
+        )
 
 
 def _add_selector(

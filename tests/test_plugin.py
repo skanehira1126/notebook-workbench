@@ -1,4 +1,5 @@
 import json
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
@@ -12,7 +13,8 @@ def test_manifest_declares_only_existing_skill_component() -> None:
     assert "apps" not in manifest
     assert (ROOT / "skills" / "notebook-workbench" / "SKILL.md").is_file()
     assert (ROOT / "skills" / "notebook-data-analysis" / "SKILL.md").is_file()
-    assert manifest["version"] == "0.2.1"
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert manifest["version"] == project["project"]["version"]
 
 
 def test_marketplace_exposes_root_plugin() -> None:

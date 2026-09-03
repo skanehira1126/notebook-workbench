@@ -63,6 +63,42 @@ notebook-workbench analysis execute \
   --json
 ```
 
+### Local runner と Docker runner
+
+`analysis execute` のデフォルトは従来どおり `--runner local` です。Workbench とPapermillはホストのPython環境で動作し、追加設定なしで既存の実行方法を維持します。
+
+`--runner docker` は、Workbenchの検証・状態遷移・ダイジェスト・成果物管理をホストに残したまま、PapermillによるNotebook実行だけをrunごとの一時コンテナへ隔離します。macOSではNotebookプロセスへ信頼できるメモリhard limitを設定しにくいため、メモリ上限が必要な分析にはDocker runnerを使用してください。Docker Desktopが起動している必要があります。
+
+```bash
+notebook-workbench analysis execute \
+  --analysis-dir notebooks/analyses/retention-drop \
+  --run-id run-001 \
+  --runner docker \
+  --memory 8g \
+  --mount "/Volumes/Analysis SSD/data:/data:ro" \
+  --env DATA_ROOT=/data \
+  --json
+```
+
+Docker runnerでは `--memory` が必須です。`--memory-swap` を省略するとmemory limitと同じ値になり、追加のswapを利用しません。`--project-root` を省略した場合は、`--cwd` またはanalysis directoryから上位へ探索し、`pyproject.toml` と `uv.lock` の両方を含む最も近いディレクトリを使用します。analysis directoryはproject root配下にある必要があります。
+
+`uv.lock` が分析環境の定義であり、Dockerはresource sandboxです。コンテナ内では `uv run --frozen` を使うためlock fileを変更しません。ホストのmacOS用 `.venv` はLinuxコンテナと互換性がないため共有せず、`UV_PROJECT_ENVIRONMENT=/opt/venv` で分離したLinux環境を使用します。Papermill、ipykernel、nbformatはWorkbenchがexecution overlayとして追加するため、分析プロジェクトの依存関係へ追加する必要はありません。
+
+デフォルトimageはarm64とamd64に対応する薄いPython・uv imageです。Apple Siliconでも上記と同じコマンドを使用できます。`--docker-image IMAGE` で上書きする場合は、利用中のCPU architectureに対応するimageを指定してください。
+
+外部SSDなどの追加mountは `SOURCE:TARGET[:ro|rw]` 形式で複数指定できます。SOURCEは起動前に存在確認され、空白を含むpathも1つの引数として安全に渡されます。modeの省略時はread-onlyです。分析が入力データを意図せず変更しないようread-onlyを推奨し、書き込みが必要なmountだけ明示的に `:rw` を指定してください。SSDが未接続の場合はディレクトリを自動作成せず、runを `planned` のまま保って実行前に失敗します。Notebookからは `/Volumes/...` ではなく `/data` などのcontainer pathを参照してください。
+
+`--cwd` はproject rootまたは明示したbind mount配下に限られ、対応するcontainer pathへ変換されます。`--env KEY=VALUE` は複数指定できます。TOKEN、SECRET、PASSWORD、API_KEY、CREDENTIALを名前に含む変数は、値をコンテナへ渡しますが `run.yaml` ではredactします。
+
+Linux用環境とuv cacheはDocker named volumeに保持されます。不要になったvolumeは、実行中のrunがないことを確認してから一覧で正確な名前を確認し、明示的に削除してください。
+
+```bash
+docker volume ls --filter name=notebook-workbench-
+docker volume rm notebook-workbench-uv-cache notebook-workbench-venv-<project-hash>
+```
+
+Docker runnerはコンテナ終了後にOOM状態とexit codeを検査してからコンテナを削除します。OOMの場合はmemory limit、exit code、stderrの末尾を `run.yaml` のfailure情報へ残し、単なるexit code 137とは区別します。Docker、uv、Papermillのログはcaptureされるため、`--json` のstdoutにはWorkbenchの最終JSONだけが出力されます。
+
 意味的な検査結果は `analysis set-validation` で記録し、知見を `result.md`、統合した根拠を `output.md` に記載します。各必須promptを置き換えてmarkerを除去しない限り、実行の完了・採用は拒否されます。実行中にホストやコマンドが停止した場合は、実行プロセスが残っていないことを確認してから `analysis recover-run` で run を失敗状態へ閉じます。厳密な検証ではローカルの実行時根拠を確認します。`--portable` を指定すると、ソースと状態の検証を維持しつつ、意図的に省略した実行済み Notebook と実行時成果物を許容します。
 
 ## 安全な作成・編集ワークフロー
@@ -119,7 +155,7 @@ notebook-workbench validate analysis.ipynb --source
 | `analysis init --root ROOT --analysis-id ID --title TITLE` | バージョン管理された分析ワークスペースと最初のリクエストを作成します。 |
 | `analysis add-request ...` | 完了済みの実行に紐づく変更不可の追加リクエストを作成します。 |
 | `analysis start-run ...` | 未実行のソース Notebook と schema v2 の実行記録を作成します。 |
-| `analysis execute ...` | 計画済みの実行を Papermill で実行し、`executed.ipynb` に出力します。 |
+| `analysis execute ... [--runner local\|docker]` | 計画済みの実行をlocalまたはメモリ制限付きDockerのPapermillで実行し、`executed.ipynb` に出力します。 |
 | `analysis set-validation ...` | 実行ライフサイクルが管理する `clean_execution` を除き、意味検証結果を安全に記録します。 |
 | `analysis recover-run ...` | 中断後に残った `running` run を、理由付きで失敗状態へ閉じます。 |
 | `analysis complete-run ...` | 意味的な検査とダイジェスト検査の後、実行を完了状態にします。 |
@@ -173,6 +209,12 @@ uv run tox -e py313
 uv run tox -e lint
 uv run tox -e codex
 uv run tox -e py313 -- tests/test_cli.py
+```
+
+通常suiteはDocker daemonを必要としません。Docker Desktopが利用できる環境で実コンテナ、read-only mount、OOM判定まで検証する場合だけ、専用のtox環境を明示的に実行します。
+
+```bash
+uv run tox -e docker
 ```
 
 GitHub Actions でも、Linux と macOS 上の Python 3.11〜3.13 に対して同じ tox 環境を使用します。`codex` 環境では Codex のシステムスキル検証ツールがインストールされている必要があるため、引き続きローカルでのプラグイン開発用検査として扱います。
