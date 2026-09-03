@@ -5,8 +5,9 @@ from pathlib import Path
 import nbformat
 import yaml
 
-from notebook_workbench import analysis_ops
+from notebook_workbench import analysis_ops, cli
 from notebook_workbench.cli import main
+from notebook_workbench.execution_runners import ExecutionResult
 
 
 def _resolve_template_markers(path: Path) -> None:
@@ -445,6 +446,165 @@ def test_analysis_cli_validation_failure_and_execution_error_are_stable_json(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert json.loads(captured.err)["error"]["code"] == "analysis_execution_failed"
+
+
+def test_analysis_execute_cli_validates_and_forwards_docker_options(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    base = [
+        "analysis",
+        "execute",
+        "--analysis-dir",
+        str(tmp_path / "analysis"),
+        "--run-id",
+        "run-001",
+        "--json",
+    ]
+    assert main([*base, "--runner", "docker"]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert json.loads(captured.err)["error"]["code"] == "cli_argument_error"
+    assert "--memory is required" in captured.err
+
+    assert main([*base, "--memory", "1g"]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert json.loads(captured.err)["error"]["code"] == "cli_argument_error"
+    assert "require --runner docker" in captured.err
+
+    received: dict[str, object] = {}
+
+    def fake_execute(*_, **kwargs):
+        received.update(kwargs)
+        return {"executed_path": "/tmp/executed.ipynb", "status": "executed"}
+
+    monkeypatch.setattr(cli, "execute_analysis_run", fake_execute)
+    assert (
+        main(
+            [
+                *base,
+                "--runner",
+                "docker",
+                "--project-root",
+                str(tmp_path),
+                "--docker-image",
+                "example/image:latest",
+                "--memory",
+                "8g",
+                "--memory-swap",
+                "8g",
+                "--mount",
+                "/Volumes/Analysis SSD/data:/data:ro",
+                "--mount",
+                f"{tmp_path}:/output:rw",
+                "--env",
+                "DATA_ROOT=/data",
+                "--env",
+                "MODE=strict",
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "executed"
+    assert received["runner"] == "docker"
+    assert received["memory"] == "8g"
+    assert received["memory_swap"] == "8g"
+    assert received["mounts"] == [
+        "/Volumes/Analysis SSD/data:/data:ro",
+        f"{tmp_path}:/output:rw",
+    ]
+    assert received["environment_variables"] == ["DATA_ROOT=/data", "MODE=strict"]
+
+
+def test_docker_execution_logs_do_not_pollute_json_stdout(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    root = tmp_path / "project"
+    assert (
+        main(
+            [
+                "analysis",
+                "init",
+                "--root",
+                str(root),
+                "--analysis-id",
+                "docker-json",
+                "--title",
+                "Docker JSON",
+            ]
+        )
+        == 0
+    )
+    analysis_dir = root / "docker-json"
+    capsys.readouterr()
+    _resolve_template_markers(analysis_dir / "requests" / "001-initial.md")
+    assert (
+        main(
+            [
+                "analysis",
+                "start-run",
+                "--analysis-dir",
+                str(analysis_dir),
+                "--request-id",
+                "req-001",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    class DockerRunner:
+        def preflight(self, _spec) -> None:
+            return None
+
+        def provenance(self, spec):
+            return {
+                "runner": "docker",
+                "kernel": spec.kernel_name,
+                "cwd": "/workspace/run",
+                "environment": {"runtime": "docker", "memory_limit": "1g"},
+            }
+
+        def execute(self, spec) -> ExecutionResult:
+            nbformat.write(nbformat.read(spec.input_path, as_version=4), spec.output_path)
+            return ExecutionResult(
+                success=True,
+                exit_code=0,
+                python_version="3.12.11",
+                papermill_version="2.6.0",
+                nbformat_version="5.10.4",
+                runner_metadata={},
+                stdout="docker and notebook logs",
+                stderr="uv logs",
+            )
+
+    monkeypatch.setattr(
+        analysis_ops, "prepare_papermill_runner", lambda *_, **__: DockerRunner()
+    )
+    assert (
+        main(
+            [
+                "analysis",
+                "execute",
+                "--analysis-dir",
+                str(analysis_dir),
+                "--run-id",
+                "run-001",
+                "--runner",
+                "docker",
+                "--memory",
+                "1g",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["status"] == "executed"
+    assert "docker and notebook logs" not in captured.out
+    assert "uv logs" not in captured.out
+    assert captured.err == ""
 
 
 def test_analysis_cli_recovers_interrupted_run_with_stable_json(

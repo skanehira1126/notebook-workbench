@@ -1,5 +1,6 @@
 import hashlib
 import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -7,7 +8,7 @@ import nbformat
 import pytest
 import yaml
 
-from notebook_workbench import analysis_ops
+from notebook_workbench import analysis_ops, execution_runners
 from notebook_workbench.analysis_ops import (
     accept_analysis_run,
     add_analysis_request,
@@ -27,6 +28,7 @@ from notebook_workbench.errors import (
     SelectionError,
     WorkbenchIOError,
 )
+from notebook_workbench.execution_runners import ExecutionResult
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -332,6 +334,230 @@ def test_execute_failure_is_persisted(
     assert run["validation"]["clean_execution"] == "failed"
     assert run["failure"]["failed_step"] == "analysis.ipynb cell 4"
     assert "CellFailure: boom" in run["failure"]["message"]
+
+
+def test_local_interrupt_keeps_existing_recoverable_running_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    analysis_dir = _analysis(tmp_path)
+    start_analysis_run(analysis_dir, "req-001")
+
+    def interrupt(**_: Any) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(analysis_ops.papermill, "execute_notebook", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        execute_analysis_run(analysis_dir, "run-001")
+
+    run = _load_yaml(analysis_dir / "runs" / "001" / "run.yaml")
+    assert run["status"] == "running"
+    assert run["validation"]["clean_execution"] == "running"
+
+
+def test_docker_preflight_failures_leave_run_planned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "pyproject.toml").write_text(
+        "[project]\nname='analysis-project'\nversion='0.1.0'\n",
+        encoding="utf-8",
+    )
+    (project_root / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+    analysis_dir = _analysis(project_root / "analyses")
+    start_analysis_run(analysis_dir, "req-001")
+    monkeypatch.setattr(execution_runners.shutil, "which", lambda _: None)
+    with pytest.raises(WorkbenchIOError, match="Docker CLI was not found"):
+        execute_analysis_run(
+            analysis_dir,
+            "run-001",
+            runner="docker",
+            project_root=project_root,
+            memory="1g",
+        )
+    assert _load_yaml(analysis_dir / "runs" / "001" / "run.yaml")["status"] == "planned"
+
+    monkeypatch.setattr(execution_runners.shutil, "which", lambda _: "/usr/bin/docker")
+    monkeypatch.setattr(
+        execution_runners.subprocess,
+        "run",
+        lambda command, **_: subprocess.CompletedProcess(
+            command, 1, "", "daemon unavailable"
+        ),
+    )
+    with pytest.raises(WorkbenchIOError, match="Docker daemon is not reachable"):
+        execute_analysis_run(
+            analysis_dir,
+            "run-001",
+            runner="docker",
+            project_root=project_root,
+            memory="1g",
+        )
+    assert _load_yaml(analysis_dir / "runs" / "001" / "run.yaml")["status"] == "planned"
+
+    monkeypatch.setattr(
+        execution_runners.subprocess,
+        "run",
+        lambda command, **_: subprocess.CompletedProcess(command, 0, "27.0.0\n", ""),
+    )
+
+    with pytest.raises(WorkbenchIOError, match="mount source does not exist"):
+        execute_analysis_run(
+            analysis_dir,
+            "run-001",
+            runner="docker",
+            project_root=project_root,
+            memory="1g",
+            mounts=[f"{tmp_path / 'disconnected'}:/data"],
+        )
+    assert _load_yaml(analysis_dir / "runs" / "001" / "run.yaml")["status"] == "planned"
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    with pytest.raises(AnalysisValidationError, match="cwd must be inside"):
+        execute_analysis_run(
+            analysis_dir,
+            "run-001",
+            runner="docker",
+            project_root=project_root,
+            memory="1g",
+            cwd=outside,
+        )
+    assert _load_yaml(analysis_dir / "runs" / "001" / "run.yaml")["status"] == "planned"
+
+
+def test_docker_execution_records_container_versions_and_provenance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    analysis_dir = _analysis(tmp_path)
+    start_analysis_run(analysis_dir, "req-001")
+
+    class SuccessfulDockerRunner:
+        def preflight(self, _spec) -> None:
+            return None
+
+        def provenance(self, spec) -> dict[str, Any]:
+            return {
+                "runner": "docker",
+                "papermill_version": None,
+                "nbformat_version": None,
+                "python_version": None,
+                "kernel": spec.kernel_name,
+                "cwd": "/workspace/runs/001",
+                "start_timeout_seconds": spec.start_timeout,
+                "cell_timeout_seconds": spec.execution_timeout,
+                "environment": {
+                    "runtime": "docker",
+                    "image": "example/image:latest",
+                    "memory_limit": "1g",
+                    "memory_swap_limit": "1g",
+                },
+            }
+
+        def execute(self, spec) -> ExecutionResult:
+            nbformat.write(nbformat.read(spec.input_path, as_version=4), spec.output_path)
+            return ExecutionResult(
+                success=True,
+                exit_code=0,
+                python_version="3.12.11",
+                papermill_version="2.6.0",
+                nbformat_version="5.10.4",
+                runner_metadata={},
+            )
+
+    monkeypatch.setattr(
+        analysis_ops,
+        "prepare_papermill_runner",
+        lambda *_, **__: SuccessfulDockerRunner(),
+    )
+
+    result = execute_analysis_run(
+        analysis_dir, "run-001", runner="docker", memory="1g"
+    )
+    run = _load_yaml(analysis_dir / "runs" / "001" / "run.yaml")
+
+    assert result["status"] == "executed"
+    assert run["execution"]["runner"] == "docker"
+    assert run["execution"]["python_version"] == "3.12.11"
+    assert run["execution"]["papermill_version"] == "2.6.0"
+    assert run["execution"]["nbformat_version"] == "5.10.4"
+    assert run["execution"]["cwd"] == "/workspace/runs/001"
+    assert run["execution"]["environment"]["memory_limit"] == "1g"
+
+
+def test_docker_oom_and_source_conflict_follow_existing_failure_lifecycle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    analysis_dir = _analysis(tmp_path)
+    start_analysis_run(analysis_dir, "req-001")
+
+    class OOMRunner:
+        def preflight(self, _spec) -> None:
+            return None
+
+        def provenance(self, spec) -> dict[str, Any]:
+            return {
+                "runner": "docker",
+                "kernel": spec.kernel_name,
+                "cwd": "/workspace/runs/001",
+                "environment": {"runtime": "docker", "memory_limit": "256m"},
+            }
+
+        def execute(self, _spec) -> ExecutionResult:
+            return ExecutionResult(
+                success=False,
+                exit_code=137,
+                python_version=None,
+                papermill_version=None,
+                nbformat_version=None,
+                runner_metadata={},
+                stderr="allocation failed",
+                oom_killed=True,
+            )
+
+    monkeypatch.setattr(
+        analysis_ops, "prepare_papermill_runner", lambda *_, **__: OOMRunner()
+    )
+    with pytest.raises(AnalysisExecutionError, match="OOM-killed"):
+        execute_analysis_run(
+            analysis_dir, "run-001", runner="docker", memory="256m"
+        )
+    run = _load_yaml(analysis_dir / "runs" / "001" / "run.yaml")
+    assert run["status"] == "failed"
+    assert "256m memory limit" in run["failure"]["message"]
+    assert "exit code 137" in run["failure"]["message"]
+    assert "allocation failed" in run["failure"]["message"]
+
+    second_analysis = _analysis(tmp_path / "conflict")
+    start_analysis_run(second_analysis, "req-001")
+
+    class ConflictingRunner(OOMRunner):
+        def execute(self, spec) -> ExecutionResult:
+            notebook = nbformat.read(spec.input_path, as_version=4)
+            nbformat.write(notebook, spec.output_path)
+            notebook.cells[-1].source += "\n# changed during execution"
+            nbformat.write(notebook, spec.input_path)
+            return ExecutionResult(
+                success=True,
+                exit_code=0,
+                python_version="3.12.11",
+                papermill_version="2.6.0",
+                nbformat_version="5.10.4",
+                runner_metadata={},
+            )
+
+    monkeypatch.setattr(
+        analysis_ops,
+        "prepare_papermill_runner",
+        lambda *_, **__: ConflictingRunner(),
+    )
+    with pytest.raises(AnalysisExecutionError, match="source notebook changed"):
+        execute_analysis_run(
+            second_analysis, "run-001", runner="docker", memory="1g"
+        )
+    conflict_run = _load_yaml(second_analysis / "runs" / "001" / "run.yaml")
+    assert conflict_run["status"] == "failed"
+    assert "ConflictError" in conflict_run["failure"]["message"]
 
 
 def test_set_validation_updates_only_agent_reviewed_checks(

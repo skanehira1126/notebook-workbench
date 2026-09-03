@@ -1,12 +1,10 @@
 """Lifecycle operations for reproducible notebook analysis workspaces."""
 
 import hashlib
-import importlib.metadata
 import json
 import os
 import re
 import shutil
-import sys
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
@@ -28,6 +26,12 @@ from .errors import (
     SelectionError,
     WorkbenchError,
     WorkbenchIOError,
+)
+from .execution_runners import (
+    ExecutionResult,
+    ExecutionSpec,
+    execution_failure_message,
+    prepare_papermill_runner,
 )
 from .notebook_ops import ValidationMode, validate_notebook
 
@@ -266,8 +270,15 @@ def execute_analysis_run(
     cwd: Path | None = None,
     start_timeout: int = 60,
     execution_timeout: int | None = None,
+    runner: str = "local",
+    project_root: Path | None = None,
+    docker_image: str | None = None,
+    memory: str | None = None,
+    memory_swap: str | None = None,
+    mounts: list[str] | None = None,
+    environment_variables: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Execute a planned run with Papermill into a separate notebook."""
+    """Execute a planned run with a local or Docker Papermill backend."""
     if start_timeout <= 0 or execution_timeout is not None and execution_timeout <= 0:
         raise AnalysisValidationError("execution timeouts must be positive integers")
     analysis_dir = _require_analysis_dir(analysis_dir)
@@ -313,6 +324,28 @@ def execute_analysis_run(
             "parameterized execution requires one code cell tagged 'parameters'"
         )
     kernel_name = kernel or _kernel_name(source_notebook)
+    execution_spec = ExecutionSpec(
+        input_path=source_path,
+        output_path=executed_path,
+        parameters=parameters,
+        kernel_name=kernel_name,
+        cwd=execution_cwd,
+        start_timeout=start_timeout,
+        execution_timeout=execution_timeout,
+    )
+    execution_runner = prepare_papermill_runner(
+        runner,
+        analysis_dir=analysis_dir,
+        cwd=execution_cwd,
+        project_root=project_root,
+        docker_image=docker_image,
+        memory_limit=memory,
+        memory_swap_limit=memory_swap,
+        mounts=mounts,
+        environment_variables=environment_variables,
+        local_execute_notebook=papermill.execute_notebook,
+    )
+    execution_runner.preflight(execution_spec)
     source_sha256 = _sha256(source_path)
     started = _now()
     state["status"] = "running"
@@ -326,57 +359,69 @@ def execute_analysis_run(
     validation = state.get("validation")
     if not isinstance(execution, dict) or not isinstance(validation, dict):
         raise AnalysisValidationError("run.yaml execution and validation must be mappings")
-    execution.update(
-        {
-            "runner": "papermill.execute_notebook",
-            "papermill_version": importlib.metadata.version("papermill"),
-            "nbformat_version": importlib.metadata.version("nbformat"),
-            "python_version": sys.version.split()[0],
-            "kernel": kernel_name,
-            "cwd": str(execution_cwd),
-            "start_timeout_seconds": start_timeout,
-            "cell_timeout_seconds": execution_timeout,
-        }
-    )
+    execution.update(execution_runner.provenance(execution_spec))
     validation["clean_execution"] = "running"
     state["failure"] = {"message": None, "failed_step": None}
     _write_yaml_atomic(run_path, state)
 
-    execution_error: Exception | None = None
+    execution_error: BaseException | None = None
+    execution_result: ExecutionResult | None = None
     try:
-        papermill.execute_notebook(
-            input_path=source_path,
-            output_path=executed_path,
-            parameters=parameters,
-            kernel_name=kernel_name,
-            cwd=execution_cwd,
-            start_timeout=start_timeout,
-            execution_timeout=execution_timeout,
-            progress_bar=False,
-            request_save_on_cell_execute=True,
-        )
-        _read_notebook(executed_path, workbench_invariants=True)
-        if _sha256(source_path) != source_sha256:
-            raise ConflictError("source notebook changed during execution")
-    except Exception as error:  # noqa: BLE001 - kernel failures can use arbitrary exceptions.
+        execution_result = execution_runner.execute(execution_spec)
+        if execution_result.success:
+            _read_notebook(executed_path, workbench_invariants=True)
+            if _sha256(source_path) != source_sha256:
+                raise ConflictError("source notebook changed during execution")
+    except BaseException as error:  # cleanup and persist interrupted Docker runs.
+        if runner == "local" and not isinstance(error, Exception):
+            raise
         execution_error = error
 
     state = _load_yaml(run_path)
     state["finished_at"] = _now().isoformat(timespec="seconds")
     notebook_state = state["notebook"]
+    if execution_result is not None:
+        execution = state["execution"]
+        execution["python_version"] = execution_result.python_version
+        execution["papermill_version"] = execution_result.papermill_version
+        execution["nbformat_version"] = execution_result.nbformat_version
+        if execution_result.runner_metadata:
+            execution["environment"] = execution_result.runner_metadata
     if executed_path.is_file():
         notebook_state["executed_sha256"] = _sha256(executed_path)
-    if execution_error is not None:
+    if execution_error is not None or (
+        execution_result is not None and not execution_result.success
+    ):
+        if execution_error is not None:
+            failure_message = f"{type(execution_error).__name__}: {execution_error}"
+            failed_step = _failure_step(execution_error)
+        else:
+            assert execution_result is not None
+            failure_memory = memory
+            environment = state["execution"].get("environment")
+            if isinstance(environment, dict) and isinstance(
+                environment.get("memory_limit"), str
+            ):
+                failure_memory = environment["memory_limit"]
+            failure_message = execution_failure_message(
+                execution_result, failure_memory
+            )
+            failed_step = execution_result.failed_step
         state["status"] = "failed"
         state["validation"]["clean_execution"] = "failed"
         state["failure"] = {
-            "message": f"{type(execution_error).__name__}: {execution_error}",
-            "failed_step": _failure_step(execution_error),
+            "message": failure_message,
+            "failed_step": failed_step,
         }
         _write_yaml_atomic(run_path, state)
+        if execution_error is not None and not isinstance(execution_error, Exception):
+            raise execution_error
+        cause = execution_error
+        if cause is None and execution_result is not None:
+            cause = execution_result.error
         raise AnalysisExecutionError(
-            f"notebook execution failed for {run_id}: {execution_error}"
-        ) from execution_error
+            f"notebook execution failed for {run_id}: {failure_message}"
+        ) from cause
     state["status"] = "executed"
     state["validation"]["clean_execution"] = "passed"
     _write_yaml_atomic(run_path, state)
