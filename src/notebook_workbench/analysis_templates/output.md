@@ -19,8 +19,9 @@ State the current answer and interpretation.
 
 Durable evidence:
 
-- Link to supporting `runs/<run-id>/result.md` sections or intentionally selected `report/`
-  files. Do not rely only on detailed execution artifacts.
+- Link to supporting `runs/NNN/result.md` sections, replacing `NNN` with the numeric part of
+  the supporting run's ID, or intentionally selected `report/` files. Do not rely only on
+  detailed execution artifacts.
 
 ## Important findings
 

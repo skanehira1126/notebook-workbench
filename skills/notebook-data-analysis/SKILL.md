@@ -1,6 +1,6 @@
 ---
 name: notebook-data-analysis
-description: Create or continue a reproducible, iterative data analysis in a Jupyter workspace with immutable requests, separate source and executed notebooks, run-level evidence, and an answer-first cumulative report. Use when a user asks to investigate data, compare cohorts or models, diagnose metrics, produce a rerunnable notebook analysis, or revise an earlier analysis while preserving its evidence trail. Do not use for one-off notebook cell editing without an analysis question.
+description: Create or continue reproducible Jupyter analyses with immutable requests, separate source and executed notebooks, run evidence, and a cumulative report. Use for data investigations, cohort/model comparisons, or metric diagnoses when a rerunnable notebook analysis is requested or an existing Workbench analysis is being continued. Do not use for one-off cell edits, output inspection, or data questions without a notebook analysis workflow.
 ---
 
 # Notebook Data Analysis
@@ -9,9 +9,15 @@ Build analysis as a sequence of reviewable runs. Keep the current answer in `out
 
 Use this skill for analytical reasoning and lifecycle decisions. Use `$notebook-workbench` for precise notebook cell inspection and editing. Never edit `.ipynb` JSON directly.
 
+## Scope and decisions
+
+Take the question, input locations, constraints, and deliverables from the request and existing workspace. Carry authorized analysis through execution, evidence review, and handoff. Infer routine choices from that context and record assumptions. Ask only when unresolved scope, metric definitions, input selection, or execution permissions materially affect the result; continue independent inspection and preparation while the dependent step waits.
+
+Explicit user requirements take precedence over general workflow preferences, subject to system/developer instructions and environment permissions. Preserve access controls, execution constraints, and required approvals. Lifecycle terms such as accepted request, `complete-run`, and `accept-run` describe local evidence state and do not by themselves require user confirmation. Reuse prior authorization; prepare the source, parameters, and expected effects before any approval that is actually required for execution or an external operation.
+
 ## Load the contract
 
-Read [references/workspace-contract.md](references/workspace-contract.md) before creating or changing a workspace. Read [references/analysis-quality.md](references/analysis-quality.md) before executing a run or finalizing conclusions. Read [references/template-promotion.md](references/template-promotion.md) only when deciding whether a completed notebook should become a reusable template.
+Read [references/workspace-contract.md](references/workspace-contract.md) for layout, state, and ownership before creating or changing a workspace. Read [references/analysis-quality.md](references/analysis-quality.md) for evidence and semantic checks before executing a run or finalizing conclusions. Read [references/template-promotion.md](references/template-promotion.md) only when template promotion is requested or part of the agreed scope. These references supply the contract and task-specific checks; example names and paths below are placeholders to adapt to the actual workspace.
 
 ## Choose the workflow
 
@@ -63,7 +69,7 @@ Edit `runs/001/analysis.ipynb` with `$notebook-workbench`. Keep it unexecuted an
 
 Tag a single parameter cell `parameters` before passing Papermill parameters. Store non-secret parameters in a YAML mapping and keep credentials outside notebooks, run metadata, artifacts, and reports.
 
-Validate the source notebook before execution:
+Validate the source notebook after authoring and before execution. Reuse a successful `$notebook-workbench` source validation if the notebook has not changed:
 
 ```bash
 notebook-workbench validate notebooks/analyses/retention-drop/runs/001/analysis.ipynb --source
@@ -81,7 +87,7 @@ notebook-workbench analysis execute \
   --json
 ```
 
-The command writes `executed.ipynb`, records digests and execution provenance, and moves the run from `planned` through `running` to `executed` or `failed`. Do not edit either notebook after successful execution. Change the source only by starting another run.
+Include `--parameters-file` only when supplying a non-secret parameter mapping. The command writes `executed.ipynb`, records digests and execution provenance, and moves the run from `planned` through `running` to `executed` or `failed`. Do not edit either notebook after successful execution. Change the source only by starting another run.
 
 If the command or host stops after the run enters `running`, first confirm that no execution process is still active. Then terminate the stale lifecycle state explicitly:
 
@@ -186,7 +192,15 @@ notebook-workbench analysis set-status \
   --json
 ```
 
-Archive only an already completed analysis. Report the workspace path, accepted run IDs, validation mode/result, important limitations, and the location of `output.md` to the user.
+Archive only an already completed analysis when archiving is requested or already authorized; archiving prevents further work in that workspace. Report the answer, workspace path, accepted run IDs, validation mode/result, important limitations, and the location of `output.md` concisely in the user's language and requested format. Keep all required sections, evidence, and requested detail in the artifacts even when the chat summary is brief.
+
+If a blocker leaves work unfinished, preserve the evidence and state what remains. When a skill rule causes a pause, confirmation, or change of direction, link the exact skill or reference file, quote the relevant clause, and distinguish its requirement from your interpretation. Do not mark failed checks or unfinished analysis as complete to end the task.
+
+## Delegation and validation scope
+
+When subagents are available and permitted, delegate independent input inspection or evidence review if it will save time or improve quality. Keep notebook mutation and lifecycle state updates with one owner; give reviewers the question, inputs, permitted scope, and expected findings. Simple edits stay local, and the workflow remains executable without subagents. Respect any host or project delegation limits.
+
+Inspect each lifecycle command's result and rely on its built-in state and digest checks where provided. Keep the initial workspace check, source validation, semantic checks, and strict handoff validation above. Do not add a full workspace scan before and after every command. A prose-only correction to mutable `output.md` needs relevant content and link checks; a change to conclusions still requires a new run. Repeat affected checks after new changes, failures, or concrete unresolved concerns; finish once the required gates and deliverables are satisfied.
 
 ## Guardrails
 
@@ -196,4 +210,3 @@ Archive only an already completed analysis. Report the workspace path, accepted 
 - Do not claim causality from descriptive evidence alone.
 - Prefer a new run over silently changing inputs, definitions, or parameters.
 - Keep generated caches and bulky runtime artifacts out of Git by project policy; the workspace format itself is Git-neutral.
-- Validate state before and after lifecycle changes.

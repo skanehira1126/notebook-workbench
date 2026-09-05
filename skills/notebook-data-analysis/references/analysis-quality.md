@@ -1,6 +1,6 @@
 # Analysis quality checklist
 
-Use this checklist before execution, before marking semantic validations, and before accepting a run.
+Use the relevant checks before execution, before marking semantic validations, and before accepting a run. Carry forward evidence for unchanged inputs and outputs; repeat affected checks when code, data, assumptions, or claims change. Required deliverables and failed or unresolved checks remain mandatory to address.
 
 ## Question and decision
 
@@ -32,12 +32,12 @@ Use this checklist before execution, before marking semantic validations, and be
 - Avoid hidden state, manual output edits, and dependence on execution order.
 - Use compact tables and purposeful charts instead of raw dumps.
 - Give important cells stable, descriptive tags for inspection.
-- Write durable figures/tables to `artifacts/` or compact `report/` files and link them from `result.md`.
+- Keep decision-relevant evidence durable. Export figures/tables to `artifacts/` or compact `report/` files when required deliverables or portability need them; otherwise notebook outputs and representative values in `result.md` can suffice. Link any exported files from `result.md`.
 - Confirm the executed notebook contains no error outputs or unexpectedly unexecuted code cells.
 
 ## Validation fields
 
-Set each field in `run.yaml` from evidence, not intent:
+Review the fields recorded in `run.yaml` against evidence, not intent. Record only the three analyst-owned checks with `analysis set-validation`; the execution lifecycle owns `clean_execution`. Do not edit validation fields directly:
 
 - `clean_execution`: Papermill finished, the notebook is structurally valid, and no error outputs remain.
 - `acceptance_criteria`: the run answers the request's required scope and deliverables.

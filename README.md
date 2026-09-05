@@ -47,14 +47,18 @@ notebook-workbench analysis init \
   --analysis-id retention-drop \
   --title "Why did retention fall?" \
   --json
+```
 
+`requests/001-initial.md` の各必須項目を記入し、隣接するpromptを内容または理由付きの `N/A` へ置き換えてから、対応する `notebook-workbench:required` markerを除去します。その後にrunを開始します。
+
+```bash
 notebook-workbench analysis start-run \
   --analysis-dir notebooks/analyses/retention-drop \
   --request-id req-001 \
   --json
 ```
 
-リクエストを記入し、各必須項目の `notebook-workbench:required` markerを、内容または理由付きの `N/A` へ置き換えてからrunを開始します。構造操作コマンドを使って `runs/001/analysis.ipynb` を作成したら、ソースを上書きせずに実行します。
+構造操作コマンドを使って `runs/001/analysis.ipynb` を編集・検証したら、ソースを上書きせずに実行します。
 
 ```bash
 notebook-workbench analysis execute \

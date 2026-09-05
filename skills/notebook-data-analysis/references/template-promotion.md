@@ -29,4 +29,4 @@ Promote a completed source notebook to a reusable template only after the analys
 7. Start a fresh analysis run with `--notebook-template TEMPLATE.ipynb` and execute it with representative parameters.
 8. Document the template's intended scope, inputs, outputs, limitations, and owner near the template.
 
-Promotion is a separate product decision. A successful analysis does not automatically imply a good reusable template.
+Promote only when requested or included in the agreed scope; a request to build the template already authorizes routine preparation and validation. A successful analysis alone does not authorize adding a template deliverable or establish reuse value.
