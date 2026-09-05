@@ -1,11 +1,17 @@
 ---
 name: notebook-workbench
-description: Create, inspect, validate, and safely edit Jupyter `.ipynb` cell structure, tags, source, and already-executed outputs with the Notebook Workbench CLI. Use for creating an empty notebook, listing notebook cells, reading a cell by tag or ID, adding/replacing/removing cells without editing JSON, changing tags, rendering a percent-script review view, validating source or executed notebooks, and extracting text, tables, errors, images, SVG, or HTML from notebook outputs. Do not use to execute notebooks or move analysis into a permanent external Python script.
+description: Create, inspect, validate, and safely edit Jupyter `.ipynb` cells and tags with the Notebook Workbench CLI, or inspect and export already-executed outputs. Use for notebook structure and source edits, cell lookup, and percent-script review views. Do not use for notebook execution or analysis lifecycle decisions; use notebook-data-analysis for reproducible analysis workspaces.
 ---
 
 # Notebook Workbench
 
 Keep the notebook as the source of truth. Use the deterministic CLI instead of opening or patching `.ipynb` JSON.
+
+## Scope and decisions
+
+Use the target notebook, requested cells, and desired change from the request and context. Carry authorized edits through validation without reconfirming routine choices. Resolve selectors by inspection; ask only when the intended target or effect remains materially ambiguous. Below, confirming a source or ID means inspecting it, not asking the user again.
+
+Explicit user requirements take precedence over general workflow preferences, subject to system/developer instructions and environment permissions. Preserve existing access controls and required approvals; previous authorization for the same action still applies.
 
 ## Resolve the CLI
 
@@ -71,19 +77,21 @@ notebook-workbench cell add <notebook.ipynb> \
 
 Use `--before-tag`, `--after-tag`, `--before-cell-id`, `--after-cell-id`, or `--append` exactly once. After every successful mutation, use the newly returned digest for the next mutation; never reuse the previous digest.
 
-Remove a cell only after confirming its source and ID. Removing a `parameters` cell requires `--allow-parameters-cell`.
+Remove a cell only after confirming its source and ID. Removing a `parameters` cell requires explicit authorization for that removal and `--allow-parameters-cell`; use authorization already present in the request or session.
 
 Update tags with `tag add`, `tag remove`, or `tag set`. Select a cell with `--cell-id`; use `--cell-tag` only when a tag selector is necessary because `--tag` names the tag being added/removed/set. Use `tag rename --all` only after reviewing every matching cell.
 
 ## Validate after editing
 
-Run source validation after all authoring mutations:
+Run source validation once after the batch of authoring mutations:
 
 ```bash
 notebook-workbench validate <notebook.ipynb> --source --json
 ```
 
 Treat exit code 5 or `valid: false` as a failed edit. Do not execute the notebook from this skill. Hand execution to the workflow that owns Papermill or Jupyter kernel lifecycle.
+
+Once the requested change and source validation are confirmed, finish with the notebook path, changes, validation result, and any remaining limitation in the user's language and requested format. Repeat or broaden checks only for new edits, failures, or a concrete unresolved concern.
 
 ## Inspect executed results
 
@@ -109,6 +117,8 @@ When `--save-media` is used, exported MIME payloads are replaced in JSON by comp
 ## Respect failure boundaries
 
 - On exit code 3, relist cells and choose an unambiguous ID.
-- On exit code 4, stop, relist the notebook, review concurrent changes, and rebuild the edit against the new digest.
+- On exit code 4, stop the rejected write, relist the notebook, review concurrent changes, and rebuild the edit against the new digest. Continue if the requested change can be reconciled without discarding concurrent work; ask only about unresolved competing edits.
 - On exit code 5, preserve the rejected notebook and correct the invalid source/execution/tag condition.
 - On exit code 6, report the path and I/O failure; do not retry by directly rewriting JSON.
+
+When a skill rule requires a pause, confirmation, or an unfinished handoff, link the exact skill or reference file, quote the relevant clause, and explain its application separately from your interpretation. Prepare any authorized inspection or replacement-source draft that does not depend on the blocker before asking for the missing action or decision.
