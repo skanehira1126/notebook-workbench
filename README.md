@@ -37,6 +37,20 @@ uv run notebook-workbench --version
 
 プラグインマニフェストは `.codex-plugin/plugin.json` にあります。同梱の `notebook-workbench` スキルと `notebook-data-analysis` スキルを宣言しており、MCP サーバーやアプリには依存しません。プラグインをインストールしても、Python パッケージが暗黙にインストールされたり、プラグインキャッシュ内に CLI 環境が作成されたりすることはありません。
 
+## スキルの使い分け
+
+| 依頼 | 使用するスキル | 完了の目安 |
+|---|---|---|
+| Notebook のセル・タグの作成、確認、編集 | [`notebook-workbench`](skills/notebook-workbench/SKILL.md) | 対象の内容を確認し、編集した場合は一連の編集後のソース検証も完了している。 |
+| 保存済みの実行結果や画像の確認・取り出し | [`notebook-workbench`](skills/notebook-workbench/SKILL.md) | 対象の出力とエラーを確認し、依頼された結果や保存先を返している。 |
+| 再実行可能な分析の作成・継続 | [`notebook-data-analysis`](skills/notebook-data-analysis/SKILL.md) | 実行と根拠の確認、結果・累積レポートの更新、run の採用、strict 検証、分析完了まで到達している。 |
+
+単発のデータ質問は、再実行可能な Notebook 分析が求められている場合に分析スキルを使います。
+各 `SKILL.md` は適用範囲・完了条件・参照先を案内し、編集、出力確認、分析ライフサイクル、
+障害復旧の詳細は必要な参照文書だけを読みます。Notebook の構成は問いに合わせて調整でき、
+問い・方法・根拠・限界を追えることが必要です。`output.md` の文章だけを直す場合は関連する
+内容とリンクを確認し、結論が変わる場合は新しい run を作成します。
+
 ## 再現可能な分析ワークフロー
 
 変化していく分析上の問いに Notebook で答え、レビューや再実行が可能な状態を保つ場合は、`$notebook-data-analysis` を使用します。ワークスペースと最初のソース実行を作成します。
