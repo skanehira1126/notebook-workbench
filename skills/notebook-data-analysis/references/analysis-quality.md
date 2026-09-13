@@ -1,6 +1,15 @@
 # Analysis quality checklist
 
-Use the relevant checks before execution, before marking semantic validations, and before accepting a run. Carry forward evidence for unchanged inputs and outputs; repeat affected checks when code, data, assumptions, or claims change. Required deliverables and failed or unresolved checks remain mandatory to address.
+Use the relevant checks when designing the notebook, before execution, before marking semantic validations, and before accepting a run. Carry forward evidence for unchanged inputs and outputs; repeat affected checks when code, data, assumptions, or claims change. Required deliverables and failed or unresolved checks remain mandatory to address.
+
+## Notebook design
+
+Make the question, scope, input provenance, metric definitions, method, supporting evidence,
+and limitations traceable to another analyst. A useful structure is question and inputs →
+loading and structural checks → metric definitions and transformations → quality and assumption
+checks → decision-relevant tables or charts → findings and limitations. This is an example;
+adapt cell order and grouping to the analysis while preserving those outcomes and top-to-bottom
+execution. Keep parameters in one `parameters`-tagged code cell when using Papermill parameters.
 
 ## Question and decision
 
@@ -25,6 +34,7 @@ Use the relevant checks before execution, before marking semantic validations, a
 - Distinguish exploratory patterns from confirmatory tests.
 - Quantify uncertainty when it changes the decision.
 - Test plausible alternative explanations before causal language.
+- Do not claim causality from descriptive evidence alone.
 
 ## Notebook evidence
 
@@ -58,6 +68,7 @@ Use `failed` when a check fails. Do not convert uncertainty into `passed` to mak
 ## Final synthesis
 
 - `result.md` must describe this run without relying on unstated notebook context.
+- Link its claims to durable notebook cells/outputs or selected files under `artifacts/` or `report/`.
 - `output.md` must synthesize accepted evidence rather than concatenate run summaries.
 - Cite accepted run IDs next to the claims they support.
 - Preserve prior conclusions when superseded by explaining what changed and why.

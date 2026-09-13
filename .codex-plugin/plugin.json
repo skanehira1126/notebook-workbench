@@ -1,6 +1,6 @@
 {
   "name": "notebook-workbench",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Create, inspect, and safely edit Jupyter notebooks, and run reproducible iterative analyses with durable evidence.",
   "author": {
     "name": "Notebook Workbench contributors"
