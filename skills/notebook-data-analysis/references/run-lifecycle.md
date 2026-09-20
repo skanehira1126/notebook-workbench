@@ -2,6 +2,7 @@
 
 Use the sections needed for a new workspace, a run, integration, or a follow-up.
 Read [workspace-contract.md](workspace-contract.md) for the state and ownership contract.
+Check [CLI availability](execution-environment.md#inspect-existing-setup) before using the commands.
 The example analysis, request, run, paths, and tags are placeholders; use actual CLI-returned identities.
 
 ## Start a workspace
@@ -29,7 +30,11 @@ here and inspect `analysis.yaml` and the relevant request/run history to select 
 notebook-workbench analysis validate --analysis-dir notebooks/analyses/retention-drop --json
 ```
 
-## Plan and author a run
+## Prepare execution, then plan and author a run
+
+Use [execution-environment.md](execution-environment.md) to select the environment, runner,
+kernel, input paths, and output locations before creating the source notebook. For an existing
+planned run, confirm those choices against its source and parameters, then proceed to execution.
 
 Create one run for one coherent attempt:
 
@@ -52,7 +57,8 @@ notebook-workbench validate notebooks/analyses/retention-drop/runs/001/analysis.
 
 ## Execute without overwriting source
 
-Run Papermill through the lifecycle command:
+Run Papermill through the lifecycle command with the choices from
+[execution preparation](execution-environment.md). For local execution:
 
 ```bash
 notebook-workbench analysis execute \
@@ -64,6 +70,21 @@ notebook-workbench analysis execute \
 
 Include `--parameters-file` only when supplying a non-secret parameter mapping. The command
 writes `executed.ipynb` and records digests and execution provenance under the workspace contract.
+
+For Docker execution (`8g` is an example; use the selected workload budget):
+
+```bash
+notebook-workbench analysis execute \
+  --analysis-dir notebooks/analyses/retention-drop \
+  --run-id run-001 \
+  --runner docker \
+  --memory 8g \
+  --json
+```
+
+Add the selected `--kernel`, `--cwd`, and, for Docker, image or mount options as needed.
+See [working directory and paths](execution-environment.md#working-directory-and-paths)
+before changing the example's path assumptions.
 
 For an interrupted or failed execution, read [recovery.md](recovery.md).
 

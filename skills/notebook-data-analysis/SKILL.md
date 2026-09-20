@@ -34,8 +34,9 @@ execution or external operation.
 | Task | Read when needed |
 |---|---|
 | Correct wording in mutable `output.md` without changing conclusions | Inspect the affected content and links; lifecycle references are unnecessary for this correction. |
-| Create or continue an analysis workspace | [workspace-contract.md](references/workspace-contract.md) for layout, state, and ownership before workspace changes; [run-lifecycle.md](references/run-lifecycle.md) for the relevant lifecycle commands. |
-| Author or execute a run, review its evidence, or finalize conclusions | [analysis-quality.md](references/analysis-quality.md) for notebook design, semantic checks, and report quality. |
+| Create or continue an analysis workspace | [workspace-contract.md](references/workspace-contract.md) for layout, state, and ownership before workspace changes; [run-lifecycle.md](references/run-lifecycle.md) for workspace checks and lifecycle commands. |
+| Prepare, author, or execute a run, including execution of an existing planned run | [execution-environment.md](references/execution-environment.md) for environment, runner, kernel, and paths; [run-lifecycle.md](references/run-lifecycle.md) for execution; [analysis-quality.md](references/analysis-quality.md) for notebook design and evidence checks. |
+| Review run evidence or finalize conclusions | [analysis-quality.md](references/analysis-quality.md) for semantic checks and report quality; [run-lifecycle.md](references/run-lifecycle.md) for validation, acceptance, and completion. |
 | Handle an interrupted or failed execution | [recovery.md](references/recovery.md) and the workspace contract before a lifecycle change. |
 | Validate a copied evidence package | The strict/portable section of [workspace-contract.md](references/workspace-contract.md). |
 | Promote an analysis to a reusable template | [template-promotion.md](references/template-promotion.md), only when requested or included in the agreed scope. |
@@ -46,6 +47,13 @@ follow-up request; material changes to code, parameters, inputs, assumptions, or
 use a new run. Never mutate an accepted request or a completed run, and do not edit either
 notebook after successful execution. Keep source and executed notebooks separate and use
 `$notebook-workbench` instead of editing `.ipynb` JSON directly.
+
+After selecting the workspace and checking its current state, prepare the execution environment
+before creating or authoring a run. Inspect existing dependencies, input locations, and resource
+constraints; choose the runner, kernel, and working directory using the environment reference.
+Then author, execute, inspect evidence, and complete the lifecycle. For an existing planned run,
+check that its code and parameters fit that environment before execution; reuse confirmed choices
+unless inputs, requirements, or the environment have changed.
 
 Archive only when requested or already authorized; archiving makes the workspace terminal.
 

@@ -9,6 +9,16 @@ Read this when execution is interrupted or a run fails. Inspect the command resu
   the failed run and start a new run for the corrected attempt.
 - `running`: establish whether execution is still active. Do not recover an active process.
 
+For missing dependencies, kernel startup/import errors, incompatible images, or input path
+errors, revisit [execution preparation](execution-environment.md) before retrying. Check the
+selected kernel's environment and the runner's path mapping rather than installing packages
+into whichever Python launched the CLI. An environment error may leave a run `planned` or
+`failed` depending on when it occurred; use the recorded state to choose the retry path above.
+
+For a recorded Docker OOM, reduce peak memory use or adjust the budget within the workload's
+constraints, then start a new run. Do not infer OOM from exit code 137 alone or remove a required
+memory limit to make a retry succeed. Review the recorded failure and available partial evidence.
+
 If execution has stopped but the run remains `running`, close the stale state explicitly.
 Use the actual analysis path, run ID, and observed reason in this example:
 
