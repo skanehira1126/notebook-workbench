@@ -35,7 +35,7 @@ uv sync
 uv run notebook-workbench --version
 ```
 
-プラグインマニフェストは `.codex-plugin/plugin.json` にあります。同梱の `notebook-workbench` スキルと `notebook-data-analysis` スキルを宣言しており、MCP サーバーやアプリには依存しません。プラグインをインストールしても、Python パッケージが暗黙にインストールされたり、プラグインキャッシュ内に CLI 環境が作成されたりすることはありません。
+プラグインマニフェストは `.codex-plugin/plugin.json` にあります。同梱の `notebook-workbench`、`notebook-data-analysis`、`data-inspection` スキルを宣言しており、MCP サーバーやアプリには依存しません。プラグインをインストールしても、Python パッケージが暗黙にインストールされたり、プラグインキャッシュ内に CLI 環境が作成されたりすることはありません。
 
 ## スキルの使い分け
 
@@ -43,6 +43,7 @@ uv run notebook-workbench --version
 |---|---|---|
 | Notebook のセル・タグの作成、確認、編集 | [`notebook-workbench`](skills/notebook-workbench/SKILL.md) | 対象の内容を確認し、編集した場合は一連の編集後のソース検証も完了している。 |
 | 保存済みの実行結果や画像の確認・取り出し | [`notebook-workbench`](skills/notebook-workbench/SKILL.md) | 対象の出力とエラーを確認し、依頼された結果や保存先を返している。 |
+| CSV・TSV・Parquet の概要・値の確認 | [`data-inspection`](skills/data-inspection/SKILL.md) | 必要な集計と、確認範囲・表示の省略件数を返している。 |
 | 再実行可能な分析の作成・継続 | [`notebook-data-analysis`](skills/notebook-data-analysis/SKILL.md) | 実行と根拠の確認、結果・累積レポートの更新、run の採用、strict 検証、分析完了まで到達している。 |
 
 単発のデータ質問は、再実行可能な Notebook 分析が求められている場合に分析スキルを使います。
@@ -50,6 +51,43 @@ uv run notebook-workbench --version
 障害復旧の詳細は必要な参照文書だけを読みます。Notebook の構成は問いに合わせて調整でき、
 問い・方法・根拠・限界を追えることが必要です。`output.md` の文章だけを直す場合は関連する
 内容とリンクを確認し、結論が変わる場合は新しい run を作成します。
+
+## データファイルの確認
+
+Notebookを作成せず、ローカルのCSV・TSV・Parquetを読み取り専用で確認できます。
+Parquet対応のPyArrowはCLIの依存関係としてインストールされます。
+
+```bash
+notebook-workbench data inspect data.parquet --json
+notebook-workbench data inspect data.csv --columns dimension slice --null-counts --json
+notebook-workbench data values data.csv --columns dimension scope calibration --json
+notebook-workbench data values data.parquet --columns slice --by dimension --limit 10 --json
+```
+
+`inspect` は行数、列名・型、先頭5行を返します。`--head N` で表示行数、`--columns` で列を選択できます。
+CSV/TSVの行数は全件走査、Parquetの行数はメタデータから取得します。
+Parquetは選択列の先頭バッチだけを読み、`--head 0` なら概要のみを取得します。
+欠損数が必要な場合は `--null-counts` を指定すると選択列を全件走査します。
+省略時の `missing_counts: null` は「未集計」であり、欠損ゼロではありません。
+
+`values` は選択した各列のユニーク値と出現件数を全行から集計します。
+`--by` は複数列を指定でき、各グループ内で列ごとの頻度を返します。
+表示上限は列・グループごとに10値、全体で20グループです。
+`--limit` と `--group-limit` で変更でき、`unique_count`、`omitted_values`、`omitted_groups` で
+全体件数と省略件数を確認できます。値・グループはcanonical JSON表現の辞書順で並び、
+数値順や頻度順ではありません。表示上限は集計範囲を変えず、集計メモリはユニーク値・グループ数に応じて増えます。
+
+CSV/TSVはヘッダー付きUTF-8（BOM可）に対応し、`001`、`NA`、`null`、空白などを文字列のまま保持します。
+空文字を欠損として数えますが、値一覧では空文字のままです。Parquetは保存された型を保持し、
+欠損は実際のnullだけを数えます。NaNや空文字はnullに含めません。
+欠損数はトップレベルのセル単位です。重複・空の列名や不正なCSVレコードはエラーになります。
+Parquetの日付・時刻はJSONではISO文字列、decimal・binary・duration・非有限浮動小数点数は
+それぞれ `decimal`・`hex`・`duration`・`float` をキーにしたオブジェクトで返し、ネストした値にも適用します。
+durationは整数と `unit` の組で表現し、日時・時刻・durationはナノ秒精度を保持します。
+
+テキスト出力は長い表示値を160文字で省略してマーカーを付けます。`--json` は返却レコードの値を省略しません。
+先頭行は代表サンプルではなく、Parquetの概要確認は全データページの検証を意味しません。
+入力は単一ファイルに限り、ディレクトリのParquet datasetやURL、glob展開には対応しません。
 
 ## 再現可能な分析ワークフロー
 
@@ -158,6 +196,8 @@ notebook-workbench validate analysis.ipynb --source
 
 | コマンド | 用途 |
 |---|---|
+| `data inspect FILE [--columns COL ...] [--head N] [--null-counts] [--json]` | CSV・TSV・Parquetの行数・スキーマ・先頭行、任意で全件の欠損数を確認します。 |
+| `data values FILE --columns COL ... [--by COL ...] [--limit N] [--group-limit N] [--json]` | 列ごと・グループごとのユニーク値と件数を全件集計し、表示上限と省略件数を返します。 |
 | `notebook create NOTEBOOK [kernel options] [--json]` | 既存ファイルを上書きせず、空の未実行 Notebook を作成します。 |
 | `cells list NOTEBOOK [--json]` | ID、インデックス、種類、タグ、実行状態、出力数、ソースダイジェストを一覧表示します。 |
 | `cell get NOTEBOOK (--cell-id ID\|--tag TAG\|--index N) [--json]` | 1 つのセルを読み取ります。テキストモードではソースだけを出力します。 |
@@ -203,7 +243,7 @@ JSON モードではセルと出力の順序を維持し、`--save-media` を指
 | 2 | CLI 引数エラー |
 | 3 | セルまたはタグが存在しない、もしくは一意に特定できない |
 | 4 | SHA-256 の競合 |
-| 5 | 無効な Notebook、または変更時の不変条件違反 |
+| 5 | 無効な Notebook・データファイル、または変更時の不変条件違反 |
 | 6 | ファイル I/O またはアトミック置換の失敗 |
 | 7 | 分析 Notebook の実行失敗 |
 

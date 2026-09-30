@@ -57,6 +57,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     groups = parser.add_subparsers(dest="group", required=True)
 
+    data = groups.add_parser("data", help="inspect CSV, TSV, or Parquet files (read-only)")
+    data_commands = data.add_subparsers(dest="command", required=True)
+    for command in ("inspect", "values"):
+        data_parser = data_commands.add_parser(command)
+        data_parser.add_argument("path", type=Path)
+        data_parser.add_argument("--columns", nargs="+", required=command == "values")
+        _add_json(data_parser)
+        if command == "inspect":
+            data_parser.add_argument("--head", type=int, default=5)
+            data_parser.add_argument(
+                "--null-counts", action="store_true", help="scan all rows for missing counts"
+            )
+        else:
+            data_parser.add_argument("--by", nargs="+", default=[])
+            data_parser.add_argument("--limit", type=int, default=10)
+            data_parser.add_argument("--group-limit", type=int, default=20)
+
     notebook = groups.add_parser("notebook", help="create a notebook")
     notebook_commands = notebook.add_subparsers(dest="command", required=True)
     notebook_create = notebook_commands.add_parser("create", help="create a notebook")
@@ -291,6 +308,20 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _dispatch(args: argparse.Namespace) -> int:
+    if args.group == "data":
+        from .data_ops import inspect_data, list_data_values, render_data_text
+
+        if args.command == "inspect":
+            result = inspect_data(
+                args.path, columns=args.columns, head=args.head, null_counts=args.null_counts
+            )
+        else:
+            result = list_data_values(
+                args.path, columns=args.columns, by=args.by,
+                limit=args.limit, group_limit=args.group_limit,
+            )
+        _emit(result, args.json, render_data_text(result))
+        return 0
     if args.group == "notebook" and args.command == "create":
         result = create_notebook(
             args.notebook,

@@ -39,6 +39,11 @@ class AnalysisValidationError(WorkbenchError):
     error_code = "analysis_invalid"
 
 
+class DataValidationError(WorkbenchError):
+    exit_code = 5
+    error_code = "data_invalid"
+
+
 class WorkbenchIOError(WorkbenchError):
     exit_code = 6
     error_code = "io_error"

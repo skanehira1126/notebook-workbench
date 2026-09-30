@@ -1,0 +1,4 @@
+interface:
+  display_name: "Data Inspection"
+  short_description: "Inspect CSV, TSV, and Parquet data quickly"
+  default_prompt: "Use $data-inspection to check this data file's schema, rows, and relevant value frequencies."
