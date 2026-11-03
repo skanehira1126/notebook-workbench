@@ -1,0 +1,6 @@
+Generation mode: built-in image_gen
+
+Use case: logo-brand
+Precise minimal edit to the attached Notebook Workbench v11 logo.
+Add exactly ONE pale warm cream horizontal line inside the middle apricot-to-coral-red cell. Match the upper and lower blue cells' existing inset lines EXACTLY in length, thickness, rounded end caps, horizontal alignment, and relative vertical centering within the cell. Use a soft light warm cream/peach tint, with contrast comparable to the pale cyan lines on the blue cells. The middle cell should clearly be the same type of notebook cell as the other two.
+Preserve EVERYTHING ELSE unchanged: notebook shape, proportions, turquoise spine, aqua page field, border, all three cell shapes and positions, existing gradients, colors, top and bottom content lines, overall framing and transparent background. Do not add depth, lighting, shadows, outlines, text or any other detail. This is a single-line addition only. Keep clean precise edges.
