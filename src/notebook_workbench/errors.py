@@ -34,9 +34,9 @@ class NotebookValidationError(WorkbenchError):
     error_code = "notebook_invalid"
 
 
-class AnalysisValidationError(WorkbenchError):
+class ExecutionValidationError(WorkbenchError):
     exit_code = 5
-    error_code = "analysis_invalid"
+    error_code = "execution_invalid"
 
 
 class DataValidationError(WorkbenchError):
@@ -49,6 +49,6 @@ class WorkbenchIOError(WorkbenchError):
     error_code = "io_error"
 
 
-class AnalysisExecutionError(WorkbenchError):
+class NotebookExecutionError(WorkbenchError):
     exit_code = 7
-    error_code = "analysis_execution_failed"
+    error_code = "notebook_execution_failed"

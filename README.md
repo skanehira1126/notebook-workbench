@@ -1,8 +1,8 @@
 # Notebook Workbench
 
-Notebook Workbench は、Notebook の JSON を直接操作せずに Jupyter Notebook を作成・検査・編集するための、決定論的なコマンドラインツール兼 Codex プラグインです。また、変更不可のリクエスト、分離されたソース Notebook と実行済み Notebook、Papermill の来歴情報、実行単位の根拠、結論を先に示す累積レポートを備えた、再現可能な分析ワークスペースも管理します。
+Notebook Workbench は、Jupyter Notebook の作成・編集・単独実行・出力確認と、CSV・TSV・Parquet の読み取り専用確認を提供するコマンドラインツール兼 Codex プラグインです。
 
-Notebook の構造を操作するコマンドは、任意のコード実行を行いません。Papermill による実行は `analysis` ライフサイクルが担い、状態遷移、ダイジェスト、根拠の整合性を保ちます。
+Notebook の構造を操作するコマンドはコードを実行しません。`notebook execute` は Papermill でソースを実行し、元の Notebook を保ったまま別の実行済み Notebook と実行記録を保存します。分析の目的・問い・手法・run・履歴・レポートは、inquiry-lab などの利用側ワークフローで管理します。
 
 ## はじめに
 
@@ -35,7 +35,7 @@ uv sync
 uv run notebook-workbench --version
 ```
 
-プラグインマニフェストは `.codex-plugin/plugin.json` にあります。同梱の `notebook-workbench`、`notebook-data-analysis`、`data-inspection` スキルを宣言しており、MCP サーバーやアプリには依存しません。プラグインをインストールしても、Python パッケージが暗黙にインストールされたり、プラグインキャッシュ内に CLI 環境が作成されたりすることはありません。
+プラグインマニフェストは `.codex-plugin/plugin.json` にあります。同梱の `notebook-workbench`、`data-inspection` スキルを宣言しており、MCP サーバーやアプリには依存しません。プラグインをインストールしても、Python パッケージが暗黙にインストールされたり、プラグインキャッシュ内に CLI 環境が作成されたりすることはありません。
 
 ## スキルの使い分け
 
@@ -44,13 +44,9 @@ uv run notebook-workbench --version
 | Notebook のセル・タグの作成、確認、編集 | [`notebook-workbench`](skills/notebook-workbench/SKILL.md) | 対象の内容を確認し、編集した場合は一連の編集後のソース検証も完了している。 |
 | 保存済みの実行結果や画像の確認・取り出し | [`notebook-workbench`](skills/notebook-workbench/SKILL.md) | 対象の出力とエラーを確認し、依頼された結果や保存先を返している。 |
 | CSV・TSV・Parquet の概要・値の確認 | [`data-inspection`](skills/data-inspection/SKILL.md) | 必要な集計と、確認範囲・表示の省略件数を返している。 |
-| 再実行可能な分析の作成・継続 | [`notebook-data-analysis`](skills/notebook-data-analysis/SKILL.md) | 実行と根拠の確認、結果・累積レポートの更新、run の採用、strict 検証、分析完了まで到達している。 |
+| Notebook の単独実行 | [`notebook-workbench`](skills/notebook-workbench/SKILL.md) | ソースを保持し、別の出力と実行記録を保存し、必要な結果・エラーを確認している。 |
 
-単発のデータ質問は、再実行可能な Notebook 分析が求められている場合に分析スキルを使います。
-各 `SKILL.md` は適用範囲・完了条件・参照先を案内し、編集、出力確認、分析ライフサイクル、
-障害復旧の詳細は必要な参照文書だけを読みます。Notebook の構成は問いに合わせて調整でき、
-問い・方法・根拠・限界を追えることが必要です。`output.md` の文章だけを直す場合は関連する
-内容とリンクを確認し、結論が変わる場合は新しい run を作成します。
+分析の進行は inquiry-lab 側で扱い、Notebook 操作が必要な場面でこのプラグインを使います。単独の Notebook 実行には inquiry-lab のインストールやワークスペースは不要です。
 
 ## データファイルの確認
 
@@ -89,73 +85,48 @@ durationは整数と `unit` の組で表現し、日時・時刻・durationは�
 先頭行は代表サンプルではなく、Parquetの概要確認は全データページの検証を意味しません。
 入力は単一ファイルに限り、ディレクトリのParquet datasetやURL、glob展開には対応しません。
 
-## 再現可能な分析ワークフロー
+## Notebook の単独実行
 
-変化していく分析上の問いに Notebook で答え、レビューや再実行が可能な状態を保つ場合は、`$notebook-data-analysis` を使用します。ワークスペースと最初のソース実行を作成します。
-
-```bash
-notebook-workbench analysis init \
-  --root notebooks/analyses \
-  --analysis-id retention-drop \
-  --title "Why did retention fall?" \
-  --json
-```
-
-`requests/001-initial.md` の各必須項目を記入し、隣接するpromptを内容または理由付きの `N/A` へ置き換えてから、対応する `notebook-workbench:required` markerを除去します。その後にrunを開始します。
+未実行のソースと、まだ存在しない出力パスを指定します。`analysis.yaml` や `run.yaml` は不要です。
 
 ```bash
-notebook-workbench analysis start-run \
-  --analysis-dir notebooks/analyses/retention-drop \
-  --request-id req-001 \
-  --json
+notebook-workbench notebook execute runs/001/analysis.ipynb \
+  --output runs/001/executed.ipynb --kernel python3 --json
+notebook-workbench output errors runs/001/executed.ipynb --json
+notebook-workbench output get runs/001/executed.ipynb --cell-id <cell-id> --json
 ```
 
-構造操作コマンドを使って `runs/001/analysis.ipynb` を編集・検証したら、ソースを上書きせずに実行します。
+ソースは一意なセル ID を持ち、出力・実行回数のない Notebook にします。出力先の親ディレクトリは事前に作成してください。既存の出力、symlink、`OUTPUT.execution.yaml` があれば上書きを拒否します。再実行時は新しい出力名を使います。
+
+`--parameters-file FILE` は文字列キーの YAML mapping を読みます。パラメータ指定時は `parameters` タグのコードセルが必要です。既定の作業ディレクトリは**ソース Notebook の親ディレクトリ**です。`--cwd` で変更でき、相対データパス・成果物パスはそこで解決されます。`--kernel` は Notebook の kernelspec を上書きします。CLI と kernel の Python 環境は異なることがあるため、必要な依存を持つ kernel を選択してください。
+
+`--start-timeout` は既定60秒、`--execution-timeout` は任意のセル単位タイムアウトです。実行記録にはパラメータ、入出力の SHA-256、kernel、cwd、時刻、runner の版、失敗理由を保存します。成功は分析の採用や結論の正しさを意味しません。
+
+### Docker 実行
+
+コンテナ環境やメモリ上限が必要な場合に選択します。
 
 ```bash
-notebook-workbench analysis execute \
-  --analysis-dir notebooks/analyses/retention-drop \
-  --run-id run-001 \
-  --json
+notebook-workbench notebook execute runs/001/analysis.ipynb \
+  --output runs/001/executed.ipynb --runner docker --memory 8g \
+  --project-root /path/to/project --mount '/path/to/data:/data:ro' --json
 ```
 
-### Local runner と Docker runner
+Docker daemon と、`pyproject.toml`・`uv.lock` を持つプロジェクトが必要です。入力・出力 Notebook はその配下に置きます。project root は cwd とソースの親から探索し、`--project-root` でも指定できます。既定の image は `notebook execute --help` で確認でき、`--docker-image` で変更できます。image は `uv run --frozen` を実行できる必要があります。
 
-`analysis execute` のデフォルトは従来どおり `--runner local` です。Workbench とPapermillはホストのPython環境で動作し、追加設定なしで既存の実行方法を維持します。
+`--memory` は必須です。`--memory-swap` の既定は同じ値で、追加 swap を許可しません。プロジェクトは `/workspace` にマウントされ、Linux 専用の環境と uv cache を使います。ホストの `.venv` は再利用しません。追加 mount は既定 read-only、`--cwd` はホストパスから変換されますが、コードやパラメータ内のパスは自動変換されません。
 
-`--runner docker` は、Workbenchの検証・状態遷移・ダイジェスト・成果物管理をホストに残したまま、PapermillによるNotebook実行だけをrunごとの一時コンテナへ隔離します。macOSではNotebookプロセスへ信頼できるメモリhard limitを設定しにくいため、メモリ上限が必要な分析にはDocker runnerを使用してください。Docker Desktopが起動している必要があります。
+実行準備、kernel 選択、mount と失敗時の扱いは [実行リファレンス](skills/notebook-workbench/references/execution.md)を参照してください。preflight 失敗は出力を作らず、実行開始後の失敗・割り込みは部分出力と記録を保持します。kernel 開始前に失敗した場合の出力は未実行のソースコピーです。強制終了後に `running` が残った記録も成功扱いにはしません。
 
-```bash
-notebook-workbench analysis execute \
-  --analysis-dir notebooks/analyses/retention-drop \
-  --run-id run-001 \
-  --runner docker \
-  --memory 8g \
-  --mount "/Volumes/Analysis SSD/data:/data:ro" \
-  --env DATA_ROOT=/data \
-  --json
-```
+### 0.4 系からの変更と既存案件
 
-Docker runnerでは `--memory` が必須です。`--memory-swap` を省略するとmemory limitと同じ値になり、追加のswapを利用しません。`--project-root` を省略した場合は、`--cwd` またはanalysis directoryから上位へ探索し、`pyproject.toml` と `uv.lock` の両方を含む最も近いディレクトリを使用します。analysis directoryはproject root配下にある必要があります。
+0.5.0 では `analysis` コマンド群、`notebook-data-analysis` Skill、専用分析テンプレートと `analysis_ops` API を削除しました。既存の `analysis.yaml`、`run.yaml`、request、Notebook、レポートを自動で変更・削除・変換する処理はありません。
 
-`uv.lock` が分析環境の定義であり、Dockerはresource sandboxです。コンテナ内では `uv run --frozen` を使うためlock fileを変更しません。ホストのmacOS用 `.venv` はLinuxコンテナと互換性がないため共有せず、`UV_PROJECT_ENVIRONMENT=/opt/venv` で分離したLinux環境を使用します。Papermill、ipykernel、nbformatはWorkbenchがexecution overlayとして追加するため、分析プロジェクトの依存関係へ追加する必要はありません。
+旧案件の Notebook と出力は引き続き確認できます。未実行ソースの再実行には新しい出力パスを指定してください。旧 `run.yaml` の `notebook.parameters` は自動で読み取らないため、必要な値を YAML mapping ファイルに移して `--parameters-file` で明示します。旧状態・ダイジェスト・採用情報は更新しません。完了済み案件の証拠を保ちたい場合は、ソースも別の作業先にコピーして継続します。
 
-デフォルトimageはarm64とamd64に対応する薄いPython・uv imageです。Apple Siliconでも上記と同じコマンドを使用できます。`--docker-image IMAGE` で上書きする場合は、利用中のCPU architectureに対応するimageを指定してください。
+旧ライフサイクル（採用・完了・strict/portable 検証）を継続する必要がある案件は、別環境の 0.4.0 を使用してください。inquiry-lab 0.1.0 がこれらの保証を代替するわけではありません。inquiry-lab の `init` / `run new` が作る run では、通常のパスを `notebook execute` に渡して利用できます。両ツールに実行時依存はありません。
 
-外部SSDなどの追加mountは `SOURCE:TARGET[:ro|rw]` 形式で複数指定できます。SOURCEは起動前に存在確認され、空白を含むpathも1つの引数として安全に渡されます。modeの省略時はread-onlyです。分析が入力データを意図せず変更しないようread-onlyを推奨し、書き込みが必要なmountだけ明示的に `:rw` を指定してください。SSDが未接続の場合はディレクトリを自動作成せず、runを `planned` のまま保って実行前に失敗します。Notebookからは `/Volumes/...` ではなく `/data` などのcontainer pathを参照してください。
-
-`--cwd` はproject rootまたは明示したbind mount配下に限られ、対応するcontainer pathへ変換されます。`--env KEY=VALUE` は複数指定できます。TOKEN、SECRET、PASSWORD、API_KEY、CREDENTIALを名前に含む変数は、値をコンテナへ渡しますが `run.yaml` ではredactします。
-
-Linux用環境とuv cacheはDocker named volumeに保持されます。不要になったvolumeは、実行中のrunがないことを確認してから一覧で正確な名前を確認し、明示的に削除してください。
-
-```bash
-docker volume ls --filter name=notebook-workbench-
-docker volume rm notebook-workbench-uv-cache notebook-workbench-venv-<project-hash>
-```
-
-Docker runnerはコンテナ終了後にOOM状態とexit codeを検査してからコンテナを削除します。OOMの場合はmemory limit、exit code、stderrの末尾を `run.yaml` のfailure情報へ残し、単なるexit code 137とは区別します。Docker、uv、Papermillのログはcaptureされるため、`--json` のstdoutにはWorkbenchの最終JSONだけが出力されます。
-
-意味的な検査結果は `analysis set-validation` で記録し、知見を `result.md`、統合した根拠を `output.md` に記載します。各必須promptを置き換えてmarkerを除去しない限り、実行の完了・採用は拒否されます。実行中にホストやコマンドが停止した場合は、実行プロセスが残っていないことを確認してから `analysis recover-run` で run を失敗状態へ閉じます。厳密な検証ではローカルの実行時根拠を確認します。`--portable` を指定すると、ソースと状態の検証を維持しつつ、意図的に省略した実行済み Notebook と実行時成果物を許容します。
+データ確認の `data inspect` / `data values` と `data-inspection` Skill は残ります。inquiry-lab 側の同等CLIとも共存できます。EDAにおける基本確認の進め方は inquiry-lab のEDA参照で管理し、共通package化や自動同期機構は導入していません。
 
 ## 安全な作成・編集ワークフロー
 
@@ -199,6 +170,7 @@ notebook-workbench validate analysis.ipynb --source
 | `data inspect FILE [--columns COL ...] [--head N] [--null-counts] [--json]` | CSV・TSV・Parquetの行数・スキーマ・先頭行、任意で全件の欠損数を確認します。 |
 | `data values FILE --columns COL ... [--by COL ...] [--limit N] [--group-limit N] [--json]` | 列ごと・グループごとのユニーク値と件数を全件集計し、表示上限と省略件数を返します。 |
 | `notebook create NOTEBOOK [kernel options] [--json]` | 既存ファイルを上書きせず、空の未実行 Notebook を作成します。 |
+| `notebook execute INPUT --output OUTPUT [execution options] [--json]` | ソースを保持して実行し、別の出力と実行記録を保存します。 |
 | `cells list NOTEBOOK [--json]` | ID、インデックス、種類、タグ、実行状態、出力数、ソースダイジェストを一覧表示します。 |
 | `cell get NOTEBOOK (--cell-id ID\|--tag TAG\|--index N) [--json]` | 1 つのセルを読み取ります。テキストモードではソースだけを出力します。 |
 | `script get NOTEBOOK [selector] [--include-markdown]` | レビュー用の一時的な percent 形式表示を生成します。 |
@@ -210,16 +182,6 @@ notebook-workbench validate analysis.ipynb --source
 | `tag rename NOTEBOOK --from OLD --to NEW [--all]` | 一致する 1 つのタグ、または明示的に指定したすべてのタグの名前を変更します。 |
 | `output get NOTEBOOK selector [--save-media DIR] [--json]` | stream、result、display、error、MIME 出力を読み取ります。 |
 | `output errors NOTEBOOK [--json]` | すべてのエラー出力を一覧表示します。エラーがなければ空のリストを返し、終了コードは 0 です。 |
-| `analysis init --root ROOT --analysis-id ID --title TITLE` | バージョン管理された分析ワークスペースと最初のリクエストを作成します。 |
-| `analysis add-request ...` | 完了済みの実行に紐づく変更不可の追加リクエストを作成します。 |
-| `analysis start-run ...` | 未実行のソース Notebook と schema v2 の実行記録を作成します。 |
-| `analysis execute ... [--runner local\|docker]` | 計画済みの実行をlocalまたはメモリ制限付きDockerのPapermillで実行し、`executed.ipynb` に出力します。 |
-| `analysis set-validation ...` | 実行ライフサイクルが管理する `clean_execution` を除き、意味検証結果を安全に記録します。 |
-| `analysis recover-run ...` | 中断後に残った `running` run を、理由付きで失敗状態へ閉じます。 |
-| `analysis complete-run ...` | 意味的な検査とダイジェスト検査の後、実行を完了状態にします。 |
-| `analysis accept-run ...` | `output.md` への統合後、完了した実行を採用状態にします。 |
-| `analysis set-status ...` | 整合性の取れた分析を完了またはアーカイブします。 |
-| `analysis validate ... [--portable]` | ワークスペースの識別情報、状態、根拠、Notebook、ダイジェストを検証します。 |
 
 `cell add` では、`--before-tag`、`--after-tag`、`--before-cell-id`、`--after-cell-id`、`--append` のうち、いずれか 1 つだけを指定します。変更元のソースは UTF-8 の `--source-file` から読み取ります。省略した場合は標準入力から読み取ります。
 
@@ -245,13 +207,13 @@ JSON モードではセルと出力の順序を維持し、`--save-media` を指
 | 4 | SHA-256 の競合 |
 | 5 | 無効な Notebook・データファイル、または変更時の不変条件違反 |
 | 6 | ファイル I/O またはアトミック置換の失敗 |
-| 7 | 分析 Notebook の実行失敗 |
+| 7 | Notebook の実行失敗 |
 
 コマンドのエラーは標準エラー出力へ送られます。`--json` を指定すると、標準エラー出力には `error.code` と `error.message` を含む安定したオブジェクトが出力されます。`validate --json` の検査が完了した場合、`valid` が `false` でも検証結果は標準出力へ報告されます。その場合、プロセスは終了コード 5 で終了します。
 
 ## Python API
 
-CLI は、`notebook_workbench.notebook_ops`、`notebook_workbench.output_ops`、`notebook_workbench.analysis_ops` にある型付き関数へのアダプターです。Notebook の変更処理は分析ライフサイクルのロジックから独立しており、Papermill の実行とワークスペースの状態は分析ドメインだけが管理します。
+CLI は、`notebook_workbench.notebook_ops`、`notebook_workbench.output_ops`、`notebook_workbench.execution_ops`、`notebook_workbench.data_ops` にある型付き関数へのアダプターです。`execute_notebook(source, output, ...)` は Notebook と実行記録のみを扱い、分析ワークスペースの状態を管理しません。
 
 ## 開発と検証
 
@@ -277,4 +239,4 @@ uv run tox -e docker
 
 GitHub Actions でも、Linux と macOS 上の Python 3.11〜3.13 に対して同じ tox 環境を使用します。`codex` 環境では Codex のシステムスキル検証ツールがインストールされている必要があるため、引き続きローカルでのプラグイン開発用検査として扱います。
 
-テストスイートは、Notebook の作成、安定したセル ID、セル ID のない古い Notebook の拒否、読み取りセレクター、ソース検証、アトミックな変更の不変条件、SHA 競合、シンボリックリンクとパストラバーサルの拒否、タグ操作、出力形式とメディア、分析の状態遷移、実際の Papermill 実行、ポータブルおよび厳密なワークスペース検証、CLI の JSON／テキスト出力分離、終了コード、プラグイン構成を対象としています。
+テストスイートは、Notebook の作成、安定したセル ID、セル ID のない古い Notebook の拒否、読み取りセレクター、ソース検証、アトミックな変更の不変条件、SHA 競合、シンボリックリンクとパストラバーサルの拒否、タグ操作、出力形式とメディア、単独の Papermill 実行、実行記録と部分出力の保持、入出力の分離、CLI の JSON／テキスト出力分離、終了コード、プラグイン構成を対象としています。

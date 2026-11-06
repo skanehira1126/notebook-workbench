@@ -1,6 +1,6 @@
 ---
 name: notebook-workbench
-description: Create, inspect, or edit Jupyter notebook cells and tags, or inspect saved outputs, with the Notebook Workbench CLI. Use notebook-data-analysis for reproducible analysis execution.
+description: Create, edit, execute, and inspect Jupyter notebooks with the Notebook Workbench CLI. Use for notebook operations and saved outputs; analysis planning and workspace management belong to the containing workflow.
 ---
 
 # Notebook Workbench
@@ -13,8 +13,10 @@ patching `.ipynb` JSON.
 For source edits, carry the requested change through source validation once after the batch.
 Finish with the notebook path, changes, validation result, and any limitation in the user's
 language and requested format. For saved-output inspection, return the requested results and
-any exported media paths. This skill does not execute notebooks; `$notebook-data-analysis`
-owns execution in a reproducible analysis workspace.
+any exported media paths. For execution, preserve the source, save a separate executed notebook
+and execution record, and inspect outputs before reporting success. Analysis questions, run
+numbering, history, and reports belong to the containing workflow (for example inquiry-lab).
+Standalone execution needs no analysis workspace or inquiry-lab installation.
 
 Take the target, cells, and desired effect from the request and context. Resolve selectors by
 inspection; ask only when the intended target or effect remains materially ambiguous. Reuse
@@ -27,6 +29,7 @@ preferences, subject to system/developer instructions and environment permission
 | Task | Reference |
 |---|---|
 | Create, inspect, validate, or edit notebook source and tags | [notebook-editing.md](references/notebook-editing.md) — use the sections for the requested operation; includes conflict and validation failures. |
+| Execute a source notebook locally or in Docker | [execution.md](references/execution.md) — input/output protection, environment, kernel, cwd, evidence, and failure handling. |
 | Inspect or export already-executed results | [outputs.md](references/outputs.md) — errors, output selection, and media export. |
 
 Source edits require unique cell IDs, the latest observed SHA-256, and an unexecuted notebook.

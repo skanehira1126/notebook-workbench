@@ -1,6 +1,6 @@
 ---
 name: data-inspection
-description: Quickly inspect local CSV, TSV, and Parquet files for schema, row counts, previews, missing values, and grouped value frequencies with the Notebook Workbench CLI. Use for input reconnaissance and one-off data checks; use notebook-data-analysis for rerunnable notebook analyses.
+description: Quickly inspect local CSV, TSV, and Parquet files for schema, row counts, previews, missing values, and grouped value frequencies with the Notebook Workbench CLI. Use for input reconnaissance and one-off data checks.
 ---
 
 # Data Inspection

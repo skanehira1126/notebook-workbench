@@ -75,7 +75,9 @@ Run source validation once after the batch of authoring mutations:
 notebook-workbench validate <notebook.ipynb> --source --json
 ```
 
-Treat exit code 5 or `valid: false` as a failed edit. Do not execute the notebook from this skill. Hand execution to the workflow that owns Papermill or Jupyter kernel lifecycle.
+Treat exit code 5 or `valid: false` as a failed edit. An edit request alone does not require execution.
+When execution is requested, continue with [execution.md](execution.md) to select the environment
+and save a separate output notebook.
 
 ## Respect failure boundaries
 

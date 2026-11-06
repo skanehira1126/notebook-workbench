@@ -1,4 +1,4 @@
-"""Papermill execution backends for analysis runs."""
+"""Papermill execution backends for standalone notebooks."""
 
 import hashlib
 import importlib.metadata
@@ -19,7 +19,7 @@ from typing import Any, Protocol
 
 import papermill
 
-from .errors import AnalysisValidationError, WorkbenchIOError
+from .errors import ExecutionValidationError, WorkbenchIOError
 
 DEFAULT_DOCKER_IMAGE = "ghcr.io/astral-sh/uv:python3.12-trixie-slim"
 DOCKER_WORKSPACE = PurePosixPath("/workspace")
@@ -78,7 +78,7 @@ def main():
         result["error_message"] = str(error)
         cell_index = getattr(error, "cell_index", None)
         if cell_index is not None:
-            result["failed_step"] = f"analysis.ipynb cell {cell_index}"
+            result["failed_step"] = f"notebook cell {cell_index}"
         result_path.write_text(json.dumps(result), encoding="utf-8")
         print(f"{type(error).__name__}: {error}", file=sys.stderr)
         return 1
@@ -215,7 +215,7 @@ class DockerPapermillRunner:
     def prepare(
         cls,
         *,
-        analysis_dir: Path,
+        notebook_dir: Path,
         cwd: Path,
         project_root: Path | None,
         image: str | None,
@@ -242,12 +242,12 @@ class DockerPapermillRunner:
                 "Docker daemon is not reachable" + (f": {detail}" if detail else "")
             )
 
-        resolved_root = _resolve_project_root(analysis_dir, cwd, project_root)
+        resolved_root = _resolve_project_root(notebook_dir, cwd, project_root)
         try:
-            analysis_dir.relative_to(resolved_root)
+            notebook_dir.relative_to(resolved_root)
         except ValueError as error:
-            raise AnalysisValidationError(
-                f"analysis directory must be inside project root: {analysis_dir}"
+            raise ExecutionValidationError(
+                f"notebook directory must be inside project root: {notebook_dir}"
             ) from error
 
         memory = _validate_memory_limit(memory_limit, "--memory")
@@ -255,9 +255,9 @@ class DockerPapermillRunner:
             memory_swap_limit or memory, "--memory-swap"
         )
         if _memory_bytes(memory) < 6 * 1024 * 1024:
-            raise AnalysisValidationError("--memory must be at least Docker's 6m minimum")
+            raise ExecutionValidationError("--memory must be at least Docker's 6m minimum")
         if _memory_bytes(memory_swap) < _memory_bytes(memory):
-            raise AnalysisValidationError("--memory-swap cannot be less than --memory")
+            raise ExecutionValidationError("--memory-swap cannot be less than --memory")
         parsed_mounts = tuple(_parse_mount(value) for value in mounts or [])
         _validate_mount_targets(parsed_mounts)
         parsed_environment = _parse_environment_variables(environment_variables or [])
@@ -312,7 +312,7 @@ class DockerPapermillRunner:
         try:
             json.dumps(self._container_spec(spec), ensure_ascii=False)
         except (TypeError, ValueError) as error:
-            raise AnalysisValidationError(
+            raise ExecutionValidationError(
                 f"Docker parameters must be JSON-compatible: {error}"
             ) from error
 
@@ -558,7 +558,7 @@ class DockerPapermillRunner:
 def prepare_papermill_runner(
     runner: str,
     *,
-    analysis_dir: Path,
+    notebook_dir: Path,
     cwd: Path,
     project_root: Path | None = None,
     docker_image: str | None = None,
@@ -579,13 +579,13 @@ def prepare_papermill_runner(
         }
         supplied = [name for name, value in docker_options.items() if value]
         if supplied:
-            raise AnalysisValidationError(
+            raise ExecutionValidationError(
                 f"Docker options require runner='docker': {', '.join(supplied)}"
             )
         return LocalPapermillRunner(local_execute_notebook)
     if runner == "docker":
         return DockerPapermillRunner.prepare(
-            analysis_dir=analysis_dir,
+            notebook_dir=notebook_dir,
             cwd=cwd,
             project_root=project_root,
             image=docker_image,
@@ -594,7 +594,7 @@ def prepare_papermill_runner(
             mounts=mounts,
             environment_variables=environment_variables,
         )
-    raise AnalysisValidationError("runner must be 'local' or 'docker'")
+    raise ExecutionValidationError("runner must be 'local' or 'docker'")
 
 
 def execution_failure_message(result: ExecutionResult, memory_limit: str | None) -> str:
@@ -618,13 +618,13 @@ def execution_failure_message(result: ExecutionResult, memory_limit: str | None)
 
 
 def _resolve_project_root(
-    analysis_dir: Path, cwd: Path, project_root: Path | None
+    notebook_dir: Path, cwd: Path, project_root: Path | None
 ) -> Path:
     if project_root is not None:
         candidates = [project_root.expanduser().resolve()]
     else:
         candidates = []
-        for start in (cwd, analysis_dir):
+        for start in (cwd, notebook_dir):
             start = start.expanduser().resolve()
             if start.is_file():
                 start = start.parent
@@ -636,7 +636,7 @@ def _resolve_project_root(
             candidate / "uv.lock"
         ).is_file():
             candidate = candidate.resolve()
-            if project_root is not None or analysis_dir.is_relative_to(candidate):
+            if project_root is not None or notebook_dir.is_relative_to(candidate):
                 return candidate
     if project_root is not None:
         raise WorkbenchIOError(
@@ -650,10 +650,10 @@ def _resolve_project_root(
 
 def _validate_memory_limit(value: str | None, option: str) -> str:
     if value is None:
-        raise AnalysisValidationError(f"{option} is required for the Docker runner")
+        raise ExecutionValidationError(f"{option} is required for the Docker runner")
     value = value.strip().lower()
     if MEMORY_LIMIT_PATTERN.fullmatch(value) is None:
-        raise AnalysisValidationError(
+        raise ExecutionValidationError(
             f"{option} must be a positive Docker memory limit such as 512m or 8g"
         )
     return value
@@ -672,12 +672,12 @@ def _parse_mount(value: str) -> BindMount:
     if value.endswith((":ro", ":rw")):
         without_mode, mode = value.rsplit(":", 1)
     if ":" not in without_mode:
-        raise AnalysisValidationError(
+        raise ExecutionValidationError(
             "--mount must use SOURCE:TARGET[:ro|rw]"
         )
     source_value, target_value = without_mode.rsplit(":", 1)
     if not source_value or not target_value:
-        raise AnalysisValidationError(
+        raise ExecutionValidationError(
             "--mount must use SOURCE:TARGET[:ro|rw]"
         )
     source = Path(source_value).expanduser()
@@ -686,7 +686,7 @@ def _parse_mount(value: str) -> BindMount:
     source = source.resolve()
     target = PurePosixPath(target_value)
     if not target.is_absolute() or ".." in target.parts:
-        raise AnalysisValidationError(
+        raise ExecutionValidationError(
             f"Docker mount target must be an absolute container path: {target_value}"
         )
     return BindMount(source=source, target=target, read_only=mode != "rw")
@@ -697,12 +697,12 @@ def _validate_mount_targets(mounts: tuple[BindMount, ...]) -> None:
     seen: set[PurePosixPath] = set()
     for mount in mounts:
         if mount.target in seen:
-            raise AnalysisValidationError(
+            raise ExecutionValidationError(
                 f"duplicate Docker mount target: {mount.target}"
             )
         seen.add(mount.target)
         if any(_paths_overlap(mount.target, path) for path in protected):
-            raise AnalysisValidationError(
+            raise ExecutionValidationError(
                 f"Docker mount target conflicts with runner path: {mount.target}"
             )
 
@@ -711,12 +711,12 @@ def _parse_environment_variables(values: list[str]) -> dict[str, str]:
     parsed: dict[str, str] = {}
     for value in values:
         if "=" not in value:
-            raise AnalysisValidationError("--env must use KEY=VALUE")
+            raise ExecutionValidationError("--env must use KEY=VALUE")
         name, environment_value = value.split("=", 1)
         if ENVIRONMENT_NAME_PATTERN.fullmatch(name) is None:
-            raise AnalysisValidationError(f"invalid environment variable name: {name!r}")
+            raise ExecutionValidationError(f"invalid environment variable name: {name!r}")
         if name.startswith("UV_") or name in {"PATH", "VIRTUAL_ENV"}:
-            raise AnalysisValidationError(
+            raise ExecutionValidationError(
                 f"environment variable is owned by the Docker runner: {name}"
             )
         parsed[name] = environment_value
@@ -738,7 +738,7 @@ def _map_host_path(
         except ValueError:
             continue
         return target.joinpath(*relative.parts)
-    raise AnalysisValidationError(
+    raise ExecutionValidationError(
         f"Docker cwd must be inside project root or an explicit bind mount: {resolved}"
     )
 
@@ -747,7 +747,7 @@ def _map_project_path(path: Path, project_root: Path) -> PurePosixPath:
     try:
         relative = path.resolve().relative_to(project_root)
     except ValueError as error:
-        raise AnalysisValidationError(
+        raise ExecutionValidationError(
             f"notebook path must be inside Docker project root: {path}"
         ) from error
     return DOCKER_WORKSPACE.joinpath(*relative.parts)
@@ -771,7 +771,7 @@ def _optional_string(mapping: dict[str, Any], key: str) -> str | None:
 
 def _failed_step(error: BaseException) -> str | None:
     cell_index = getattr(error, "cell_index", None)
-    return f"analysis.ipynb cell {cell_index}" if cell_index is not None else None
+    return f"notebook cell {cell_index}" if cell_index is not None else None
 
 
 def _log_tail(value: str) -> str:

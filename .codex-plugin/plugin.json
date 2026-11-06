@@ -1,28 +1,39 @@
 {
   "name": "notebook-workbench",
-  "version": "0.4.0",
-  "description": "Inspect CSV, TSV, and Parquet data, safely edit Jupyter notebooks, and run reproducible analyses with durable evidence.",
+  "version": "0.5.0",
+  "description": "Inspect data, safely edit Jupyter notebooks, execute source notebooks, and inspect saved outputs.",
   "author": {
     "name": "Notebook Workbench contributors"
   },
   "license": "Apache-2.0",
-  "keywords": ["jupyter", "notebook", "ipynb", "cells", "analysis", "papermill", "csv", "parquet"],
+  "keywords": [
+    "jupyter",
+    "notebook",
+    "ipynb",
+    "cells",
+    "execution",
+    "papermill",
+    "csv",
+    "parquet"
+  ],
   "skills": "./skills/",
   "interface": {
     "displayName": "Notebook Workbench",
-    "shortDescription": "Safely edit notebooks and run reproducible analyses.",
-    "longDescription": "Provides a deterministic local CLI and Codex workflows for inspecting CSV, TSV, and Parquet data, creating notebooks, editing cells by stable ID or tag, validating outputs, and managing reproducible iterative analyses with immutable requests, Papermill runs, and durable evidence.",
+    "shortDescription": "Create, edit, execute, and inspect notebooks.",
+    "longDescription": "Provides a deterministic local CLI and Codex workflows for inspecting CSV, TSV, and Parquet data, editing notebooks by stable cell ID or tag, executing with local or Docker Papermill, and preserving separate source, output, and execution evidence.",
     "developerName": "Notebook Workbench contributors",
     "category": "Developer Tools",
-    "capabilities": ["Read", "Write"],
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
     "defaultPrompt": [
       "Create a new source notebook.",
       "List the cells and tags in this notebook.",
       "Safely update a notebook cell by tag.",
       "Inspect errors in this executed notebook.",
       "Inspect this Parquet file and its grouped value frequencies.",
-      "Create a reproducible notebook analysis workspace.",
-      "Continue this analysis with a follow-up request and evidence-preserving run."
+      "Execute this source notebook to a separate output notebook."
     ]
   }
 }

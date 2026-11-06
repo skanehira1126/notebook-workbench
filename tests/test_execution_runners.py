@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from notebook_workbench import execution_runners
-from notebook_workbench.errors import AnalysisValidationError, WorkbenchIOError
+from notebook_workbench.errors import ExecutionValidationError, WorkbenchIOError
 from notebook_workbench.execution_runners import (
     DEFAULT_DOCKER_IMAGE,
     DockerPapermillRunner,
@@ -82,8 +82,8 @@ class DockerCommandFake:
 
 def _project(tmp_path: Path) -> tuple[Path, Path, Path]:
     project_root = tmp_path / "analysis project"
-    analysis_dir = project_root / "notebooks" / "analyses" / "customer-analysis"
-    run_dir = analysis_dir / "runs" / "001"
+    notebook_dir = project_root / "notebooks" / "analyses" / "customer-analysis"
+    run_dir = notebook_dir / "runs" / "001"
     run_dir.mkdir(parents=True)
     (project_root / "pyproject.toml").write_text(
         "[project]\nname='analysis-project'\nversion='0.1.0'\n",
@@ -92,7 +92,7 @@ def _project(tmp_path: Path) -> tuple[Path, Path, Path]:
     (project_root / "uv.lock").write_text("version = 1\n", encoding="utf-8")
     source = run_dir / "analysis.ipynb"
     source.write_text("{}", encoding="utf-8")
-    return project_root, analysis_dir, run_dir
+    return project_root, notebook_dir, run_dir
 
 
 def _prepare(
@@ -104,11 +104,11 @@ def _prepare(
     environment_variables: list[str] | None = None,
     cwd: Path | None = None,
 ) -> tuple[DockerPapermillRunner, ExecutionSpec, Path]:
-    project_root, analysis_dir, run_dir = _project(tmp_path)
+    project_root, notebook_dir, run_dir = _project(tmp_path)
     monkeypatch.setattr(execution_runners.shutil, "which", lambda _: "/usr/bin/docker")
     monkeypatch.setattr(execution_runners.subprocess, "run", fake)
     runner = DockerPapermillRunner.prepare(
-        analysis_dir=analysis_dir,
+        notebook_dir=notebook_dir,
         cwd=cwd or run_dir,
         project_root=project_root,
         image=None,
@@ -275,14 +275,14 @@ def test_docker_runner_stops_and_removes_container_when_interrupted(
 def test_docker_preflight_rejects_missing_mount_and_unmapped_cwd_before_execution(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    project_root, analysis_dir, run_dir = _project(tmp_path)
+    project_root, notebook_dir, run_dir = _project(tmp_path)
     fake = DockerCommandFake()
     monkeypatch.setattr(execution_runners.shutil, "which", lambda _: "/usr/bin/docker")
     monkeypatch.setattr(execution_runners.subprocess, "run", fake)
 
     with pytest.raises(WorkbenchIOError, match="mount source does not exist"):
         DockerPapermillRunner.prepare(
-            analysis_dir=analysis_dir,
+            notebook_dir=notebook_dir,
             cwd=run_dir,
             project_root=project_root,
             image=None,
@@ -294,9 +294,9 @@ def test_docker_preflight_rejects_missing_mount_and_unmapped_cwd_before_executio
 
     outside = tmp_path / "outside"
     outside.mkdir()
-    with pytest.raises(AnalysisValidationError, match="cwd must be inside"):
+    with pytest.raises(ExecutionValidationError, match="cwd must be inside"):
         DockerPapermillRunner.prepare(
-            analysis_dir=analysis_dir,
+            notebook_dir=notebook_dir,
             cwd=outside,
             project_root=project_root,
             image=None,
@@ -308,10 +308,10 @@ def test_docker_preflight_rejects_missing_mount_and_unmapped_cwd_before_executio
     assert not any(command[1] == "create" for command in fake.calls)
 
 
-def test_project_root_discovery_selects_the_root_that_contains_the_analysis(
+def test_project_root_discovery_selects_the_root_that_contains_the_notebook(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    project_root, analysis_dir, _ = _project(tmp_path)
+    project_root, notebook_dir, _ = _project(tmp_path)
     external_project = tmp_path / "external-project"
     external_cwd = external_project / "data"
     external_cwd.mkdir(parents=True)
@@ -322,7 +322,7 @@ def test_project_root_discovery_selects_the_root_that_contains_the_analysis(
     monkeypatch.setattr(execution_runners.subprocess, "run", fake)
 
     runner = DockerPapermillRunner.prepare(
-        analysis_dir=analysis_dir,
+        notebook_dir=notebook_dir,
         cwd=external_cwd,
         project_root=None,
         image=None,
@@ -346,21 +346,21 @@ def test_docker_preflight_rejects_mounts_that_overlap_runner_paths(
     data = tmp_path / "data"
     data.mkdir()
     fake = DockerCommandFake()
-    with pytest.raises(AnalysisValidationError, match="conflicts with runner path"):
+    with pytest.raises(ExecutionValidationError, match="conflicts with runner path"):
         _prepare(tmp_path, monkeypatch, fake, mounts=[f"{data}:{target}"])
 
 
 def test_docker_preflight_validates_memory_environment_and_parameter_types(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    project_root, analysis_dir, run_dir = _project(tmp_path)
+    project_root, notebook_dir, run_dir = _project(tmp_path)
     fake = DockerCommandFake()
     monkeypatch.setattr(execution_runners.shutil, "which", lambda _: "/usr/bin/docker")
     monkeypatch.setattr(execution_runners.subprocess, "run", fake)
 
-    with pytest.raises(AnalysisValidationError, match="--memory is required"):
+    with pytest.raises(ExecutionValidationError, match="--memory is required"):
         DockerPapermillRunner.prepare(
-            analysis_dir=analysis_dir,
+            notebook_dir=notebook_dir,
             cwd=run_dir,
             project_root=project_root,
             image=None,
@@ -369,9 +369,9 @@ def test_docker_preflight_validates_memory_environment_and_parameter_types(
             mounts=None,
             environment_variables=None,
         )
-    with pytest.raises(AnalysisValidationError, match="cannot be less"):
+    with pytest.raises(ExecutionValidationError, match="cannot be less"):
         DockerPapermillRunner.prepare(
-            analysis_dir=analysis_dir,
+            notebook_dir=notebook_dir,
             cwd=run_dir,
             project_root=project_root,
             image=None,
@@ -380,9 +380,9 @@ def test_docker_preflight_validates_memory_environment_and_parameter_types(
             mounts=None,
             environment_variables=None,
         )
-    with pytest.raises(AnalysisValidationError, match="owned by the Docker runner"):
+    with pytest.raises(ExecutionValidationError, match="owned by the Docker runner"):
         DockerPapermillRunner.prepare(
-            analysis_dir=analysis_dir,
+            notebook_dir=notebook_dir,
             cwd=run_dir,
             project_root=project_root,
             image=None,
@@ -402,5 +402,5 @@ def test_docker_preflight_validates_memory_environment_and_parameter_types(
         start_timeout=spec.start_timeout,
         execution_timeout=spec.execution_timeout,
     )
-    with pytest.raises(AnalysisValidationError, match="JSON-compatible"):
+    with pytest.raises(ExecutionValidationError, match="JSON-compatible"):
         runner.preflight(invalid_spec)
