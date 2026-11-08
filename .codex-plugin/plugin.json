@@ -1,6 +1,6 @@
 {
   "name": "notebook-workbench",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Inspect data, safely edit Jupyter notebooks, execute source notebooks, and inspect saved outputs.",
   "author": {
     "name": "Notebook Workbench contributors"

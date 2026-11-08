@@ -1,5 +1,6 @@
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -11,8 +12,50 @@ from notebook_workbench.execution_runners import (
     DEFAULT_DOCKER_IMAGE,
     DockerPapermillRunner,
     ExecutionSpec,
+    LocalPapermillRunner,
     execution_failure_message,
 )
+
+
+@pytest.mark.parametrize("failure", [None, ValueError("cell failed"), KeyboardInterrupt()])
+def test_python_kernel_registration_is_scoped_and_cleaned_up(tmp_path, failure):
+    spec = ExecutionSpec(
+        input_path=tmp_path / "source.ipynb",
+        output_path=tmp_path / "output.ipynb",
+        parameters={},
+        kernel_name="notebook-workbench-python",
+        cwd=tmp_path,
+        start_timeout=60,
+        execution_timeout=None,
+        python=tmp_path / "first-env" / "bin" / "python",
+    )
+    resource_dirs = []
+
+    def execute(**kwargs):
+        manager = kwargs["kernel_manager_class"](kernel_name=spec.kernel_name)
+        kernel = manager.kernel_spec
+        resource_dirs.append(Path(kernel.resource_dir))
+        assert kernel.argv[0] == str(spec.python)
+        assert resource_dirs[0].is_dir()
+        # Nested executions must resolve their own spec even with the same kernel name.
+        other = replace(spec, python=tmp_path / "second-env" / "bin" / "python")
+        with execution_runners._local_kernel_config(other) as options:
+            other_manager = options["kernel_manager_class"](kernel_name=other.kernel_name)
+            other_kernel = other_manager.kernel_spec
+            resource_dirs.append(Path(other_kernel.resource_dir))
+            assert other_kernel.argv[0] == str(other.python)
+            assert resource_dirs[0] != resource_dirs[1]
+        assert not resource_dirs[1].exists()
+        if failure is not None:
+            raise failure
+
+    runner = LocalPapermillRunner(execute)
+    if isinstance(failure, KeyboardInterrupt):
+        with pytest.raises(KeyboardInterrupt):
+            runner.execute(spec)
+    else:
+        assert runner.execute(spec).success is (failure is None)
+    assert resource_dirs and all(not directory.exists() for directory in resource_dirs)
 
 
 class DockerCommandFake:

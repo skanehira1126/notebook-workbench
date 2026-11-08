@@ -1,5 +1,10 @@
 import hashlib
 import json
+import os
+import subprocess
+import sys
+import sysconfig
+import venv
 from pathlib import Path
 
 import nbformat
@@ -14,6 +19,104 @@ from notebook_workbench.errors import (
     WorkbenchIOError,
 )
 from notebook_workbench.execution_ops import execute_notebook
+
+
+@pytest.mark.parametrize("has_kernel_metadata", [True, False])
+def test_python_selects_venv_without_registration(
+    source_notebook, tmp_path, monkeypatch, capsys, has_kernel_metadata
+):
+    environment = tmp_path / "project environment"
+    venv.EnvBuilder(with_pip=False, symlinks=True).create(environment)
+    python = environment / "bin" / "python"
+    site_packages = Path(
+        subprocess.check_output(
+            [
+                str(python),
+                "-c",
+                "import sysconfig; print(sysconfig.get_path('purelib'))",
+            ],
+            text=True,
+        ).strip()
+    )
+    # Reuse installed kernel dependencies while keeping a module unique to this venv.
+    (site_packages / "kernel-dependencies.pth").write_text(
+        sysconfig.get_path("purelib") + "\n"
+    )
+    (site_packages / "workbench_project_probe.py").write_text("value = 42\n")
+    notebook = nbformat.read(source_notebook, as_version=4)
+    notebook.metadata.kernelspec.name = "unregistered-project-kernel"
+    if not has_kernel_metadata:
+        del notebook.metadata["kernelspec"]
+    notebook.cells[2].source = (
+        "import sys, json, workbench_project_probe\n"
+        "print(json.dumps([sys.executable, sys.prefix, workbench_project_probe.value, seed]))"
+    )
+    nbformat.write(notebook, source_notebook)
+    before = source_notebook.read_bytes()
+    execution_cwd = tmp_path / "data"
+    execution_cwd.mkdir()
+    monkeypatch.chdir(tmp_path)
+    environment_before = dict(os.environ)
+    output = tmp_path / "executed.ipynb"
+    parameters = tmp_path / "parameters.yaml"
+    parameters.write_text("seed: 9\n")
+    assert (
+        cli.main(
+            [
+                "notebook",
+                "execute",
+                str(source_notebook),
+                "--output",
+                str(output),
+                "--python",
+                "project environment/bin/python",
+                "--cwd",
+                str(execution_cwd),
+                "--json",
+                "--parameters-file",
+                str(parameters),
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    executed = nbformat.read(output, as_version=4)
+    audit = next(cell for cell in executed.cells if cell.id == "audit-cell")
+    actual = json.loads(audit.outputs[0].text)
+    assert actual == [str(python), str(environment), 42, 9]
+    assert source_notebook.read_bytes() == before
+    assert dict(os.environ) == environment_before
+    record = yaml.safe_load(
+        output.with_name(output.name + ".execution.yaml").read_text()
+    )
+    assert record["execution"]["kernel_python_executable"] == str(python)
+    assert record["execution"]["runner_python_executable"] == sys.executable
+
+
+@pytest.mark.parametrize(
+    "case", ["kernel", "docker", "non-python", "missing", "no-ipykernel"]
+)
+def test_python_preflight_leaves_no_outputs(source_notebook, tmp_path, case):
+    options = {"python": Path(sys.executable)}
+    if case == "kernel":
+        options["kernel"] = "python3"
+    elif case == "docker":
+        options["runner"] = "docker"
+    elif case == "non-python":
+        notebook = nbformat.read(source_notebook, as_version=4)
+        notebook.metadata.kernelspec.language = "julia"
+        nbformat.write(notebook, source_notebook)
+    elif case == "missing":
+        options["python"] = tmp_path / "missing-python"
+    else:
+        environment = tmp_path / "empty-venv"
+        venv.EnvBuilder(with_pip=False).create(environment)
+        options["python"] = environment / "bin" / "python"
+    output = tmp_path / "executed.ipynb"
+    with pytest.raises(ExecutionValidationError, match="--python"):
+        execute_notebook(source_notebook, output, **options)
+    assert not output.exists()
+    assert not output.with_name(output.name + ".execution.yaml").exists()
 
 
 def test_standalone_cli_executes_parameters_in_selected_cwd_and_preserves_source(

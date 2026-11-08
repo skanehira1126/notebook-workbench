@@ -33,10 +33,25 @@ venv, or conda setup. If a new environment is needed and no convention applies, 
 with project-local declarations. Keep notebook dependencies out of the CLI tool environment
 and plugin cache.
 
-The local runner is the default. `--kernel NAME` overrides notebook kernelspec metadata.
-Verify kernel discovery from the CLI environment and confirm that the selected interpreter
-has the required imports. Shell activation or CLI availability alone does not verify this.
-Register ipykernel from the intended environment when needed, following project conventions.
+The local runner is the default. For a prepared Python environment, select its executable:
+
+```bash
+notebook-workbench notebook execute runs/001/analysis.ipynb \
+  --python .venv/bin/python --output runs/001/executed.ipynb --json
+```
+
+`--python PATH` is local-only and cannot be combined with `--kernel`. Relative executable
+paths are based on the shell cwd, independently of `--cwd`. It overrides the notebook's
+Python kernelspec name and uses a temporary, unregistered kernel. The target environment
+must already contain ipykernel and the notebook dependencies; execution does not install or
+sync packages. For uv projects, perform any needed dependency sync before execution.
+Non-Python notebook metadata is rejected with this option.
+
+For an existing registered kernel or a non-Python notebook, use `--kernel NAME` to override
+notebook kernelspec metadata, or omit both options to use that metadata. Verify discovery
+from the CLI environment and the selected kernel's dependencies. Shell activation and
+`JUPYTER_PATH` alone do not select Python: generic `python` argv entries can launch the CLI's
+interpreter. Use `--python` or a kernelspec pointing to the intended absolute Python path.
 `--start-timeout` defaults to 60 seconds; `--execution-timeout` is an optional per-cell timeout.
 
 The default cwd is the **source notebook's parent**, regardless of shell cwd or output location.
@@ -84,6 +99,9 @@ The command saves `OUTPUT.execution.yaml` beside the output, with source/output 
 SHA-256 digests, parameters, timestamps, kernel, cwd, timeouts, runner versions, and failure
 details. Docker adds image, lockfile digest, mount/memory settings, exit code, and OOM evidence.
 The version fields describe the runner environment, not proof of the selected kernel's imports.
+With `--python`, `kernel_python_executable` records the selected launch path and
+`runner_python_executable` records the CLI interpreter. The launch path is configuration,
+not a measurement taken inside the running kernel.
 The record is execution evidence, not analysis acceptance or a reproducibility guarantee.
 
 Inspect errors and requested output cells; check for unexpectedly unexecuted code and required

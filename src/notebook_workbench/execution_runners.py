@@ -18,6 +18,8 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
 
 import papermill
+from jupyter_client import AsyncKernelManager
+from jupyter_client.kernelspec import KernelSpecManager
 
 from .errors import ExecutionValidationError, WorkbenchIOError
 
@@ -101,6 +103,7 @@ class ExecutionSpec:
     cwd: Path
     start_timeout: int
     execution_timeout: int | None
+    python: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,10 +150,30 @@ class LocalPapermillRunner:
     execute_notebook: Callable[..., Any] = papermill.execute_notebook
 
     def preflight(self, spec: ExecutionSpec) -> None:
-        return None
+        if spec.python is None:
+            return
+        try:
+            check = subprocess.run(
+                [str(spec.python), "-c", "import ipykernel_launcher"],
+                cwd=spec.cwd,
+                capture_output=True,
+                text=True,
+                timeout=spec.start_timeout,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise ExecutionValidationError(
+                f"could not start --python {spec.python}: {error}"
+            ) from error
+        if check.returncode:
+            raise ExecutionValidationError(
+                f"--python {spec.python} could not import ipykernel_launcher; "
+                "install ipykernel in that environment before retrying: "
+                + _log_tail(check.stderr or check.stdout)
+            )
 
     def provenance(self, spec: ExecutionSpec) -> dict[str, Any]:
-        return {
+        provenance = {
             "runner": "papermill.execute_notebook",
             "papermill_version": importlib.metadata.version("papermill"),
             "nbformat_version": importlib.metadata.version("nbformat"),
@@ -160,21 +183,27 @@ class LocalPapermillRunner:
             "start_timeout_seconds": spec.start_timeout,
             "cell_timeout_seconds": spec.execution_timeout,
         }
+        if spec.python is not None:
+            provenance["kernel_python_executable"] = str(spec.python)
+            provenance["runner_python_executable"] = sys.executable
+        return provenance
 
     def execute(self, spec: ExecutionSpec) -> ExecutionResult:
         provenance = self.provenance(spec)
         try:
-            self.execute_notebook(
-                input_path=spec.input_path,
-                output_path=spec.output_path,
-                parameters=spec.parameters,
-                kernel_name=spec.kernel_name,
-                cwd=spec.cwd,
-                start_timeout=spec.start_timeout,
-                execution_timeout=spec.execution_timeout,
-                progress_bar=False,
-                request_save_on_cell_execute=True,
-            )
+            with _local_kernel_config(spec) as kernel_options:
+                self.execute_notebook(
+                    input_path=spec.input_path,
+                    output_path=spec.output_path,
+                    parameters=spec.parameters,
+                    kernel_name=spec.kernel_name,
+                    cwd=spec.cwd,
+                    start_timeout=spec.start_timeout,
+                    execution_timeout=spec.execution_timeout,
+                    progress_bar=False,
+                    request_save_on_cell_execute=True,
+                    **kernel_options,
+                )
         except Exception as error:  # noqa: BLE001 - kernels raise arbitrary errors.
             return ExecutionResult(
                 success=False,
@@ -196,6 +225,44 @@ class LocalPapermillRunner:
             nbformat_version=provenance["nbformat_version"],
             runner_metadata={},
         )
+
+
+@contextmanager
+def _local_kernel_config(spec: ExecutionSpec) -> Iterator[dict[str, Any]]:
+    if spec.python is None:
+        yield {}
+        return
+    # A per-client search directory avoids global registration and environment mutation.
+    with tempfile.TemporaryDirectory(prefix="notebook-workbench-kernel-") as directory:
+        kernel_dir = Path(directory) / spec.kernel_name
+        kernel_dir.mkdir()
+        (kernel_dir / "kernel.json").write_text(
+            json.dumps(
+                {
+                    "argv": [
+                        str(spec.python),
+                        "-m",
+                        "ipykernel_launcher",
+                        "-f",
+                        "{connection_file}",
+                    ],
+                    "display_name": "Python (Notebook Workbench)",
+                    "language": "python",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        class PythonKernelManager(AsyncKernelManager):
+            def __init__(self, **kwargs: Any) -> None:
+                super().__init__(
+                    kernel_spec_manager=KernelSpecManager(
+                        kernel_dirs=[directory], ensure_native_kernel=False
+                    ),
+                    **kwargs,
+                )
+
+        yield {"kernel_manager_class": PythonKernelManager, "language": "python"}
 
 
 @dataclass(frozen=True, slots=True)

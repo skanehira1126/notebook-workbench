@@ -102,6 +102,17 @@ notebook-workbench output get runs/001/executed.ipynb --cell-id <cell-id> --json
 
 `--start-timeout` は既定60秒、`--execution-timeout` は任意のセル単位タイムアウトです。実行記録にはパラメータ、入出力の SHA-256、kernel、cwd、時刻、runner の版、失敗理由を保存します。成功は分析の採用や結論の正しさを意味しません。
 
+local 実行では、準備済みの Python 環境を直接指定できます。uv プロジェクトなら通常は `.venv/bin/python` です。
+
+```bash
+notebook-workbench notebook execute runs/001/analysis.ipynb \
+  --python .venv/bin/python --output runs/001/executed.ipynb --json
+```
+
+`--python PATH` は `--kernel` と併用できず、Docker と非 Python Notebook には使用できません。相対パスは CLI 起動時のディレクトリを基準に解決し、`--cwd` には影響されません。指定環境には ipykernel と Notebook の依存が必要です。依存のインストールや `uv sync` は実行しません。一時 kernel を内部で用意するため、恒久的な kernel 登録は不要です。
+
+実行記録の `kernel_python_executable` は指定した起動パス、`runner_python_executable` は CLI の Python です。既存の `python_version` は引き続き runner の版を表し、kernel 内で実測した値ではありません。
+
 ### Docker 実行
 
 コンテナ環境やメモリ上限が必要な場合に選択します。

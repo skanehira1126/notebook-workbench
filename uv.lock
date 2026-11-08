@@ -972,10 +972,11 @@ wheels = [
 
 [[package]]
 name = "notebook-workbench"
-version = "0.5.0"
+version = "0.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "ipykernel" },
+    { name = "jupyter-client" },
     { name = "nbformat" },
     { name = "papermill" },
     { name = "pyarrow" },
@@ -996,6 +997,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "ipykernel", specifier = ">=6.29,<8" },
+    { name = "jupyter-client", specifier = ">=8.6,<9" },
     { name = "nbformat", specifier = ">=5.10,<6" },
     { name = "papermill", specifier = ">=2.6,<3" },
     { name = "pyarrow", specifier = ">=19" },

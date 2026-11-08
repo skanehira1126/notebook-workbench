@@ -155,6 +155,9 @@ def build_parser() -> argparse.ArgumentParser:
     notebook_execute.add_argument("--output", type=Path, required=True)
     notebook_execute.add_argument("--parameters-file", type=Path)
     notebook_execute.add_argument("--kernel")
+    notebook_execute.add_argument(
+        "--python", type=Path, help="local kernel Python executable (exclusive with --kernel)"
+    )
     notebook_execute.add_argument("--cwd", type=Path)
     notebook_execute.add_argument("--start-timeout", type=int, default=60)
     notebook_execute.add_argument("--execution-timeout", type=int)
@@ -359,6 +362,7 @@ def _dispatch(args: argparse.Namespace) -> int:
             args.output,
             parameters_file=args.parameters_file,
             kernel=args.kernel,
+            python=args.python,
             cwd=args.cwd,
             start_timeout=args.start_timeout,
             execution_timeout=args.execution_timeout,

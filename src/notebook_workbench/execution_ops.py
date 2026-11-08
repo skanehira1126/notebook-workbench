@@ -32,6 +32,7 @@ def execute_notebook(
     *,
     parameters_file: Path | None = None,
     kernel: str | None = None,
+    python: Path | None = None,
     cwd: Path | None = None,
     start_timeout: int = 60,
     execution_timeout: int | None = None,
@@ -91,7 +92,26 @@ def execute_notebook(
         raise ExecutionValidationError(
             "parameterized execution requires one code cell tagged 'parameters'"
         )
-    kernel_name = kernel or notebook.metadata.get("kernelspec", {}).get("name")
+    if python is not None:
+        if kernel is not None:
+            raise ExecutionValidationError(
+                "--python and --kernel are mutually exclusive"
+            )
+        if runner != "local":
+            raise ExecutionValidationError("--python requires runner='local'")
+        languages = (
+            notebook.metadata.get("kernelspec", {}).get("language"),
+            notebook.metadata.get("language_info", {}).get("name"),
+        )
+        if any(language and language.lower() != "python" for language in languages):
+            raise ExecutionValidationError("--python requires a Python notebook")
+        # Resolving symlinks would bypass the venv containing its Python executable.
+        python = python.expanduser().absolute()
+    kernel_name = (
+        "notebook-workbench-python"
+        if python is not None
+        else kernel or notebook.metadata.get("kernelspec", {}).get("name")
+    )
     if not kernel_name:
         raise ExecutionValidationError("specify --kernel or a notebook kernelspec name")
     spec = ExecutionSpec(
@@ -102,6 +122,7 @@ def execute_notebook(
         cwd=execution_cwd,
         start_timeout=start_timeout,
         execution_timeout=execution_timeout,
+        python=python,
     )
     backend = prepare_papermill_runner(
         runner,
