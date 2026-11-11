@@ -1,5 +1,7 @@
 # Notebook Workbench
 
+<img src="assets/notebook-workbench-logo.png" width="240" alt="Notebook Workbench">
+
 Notebook Workbench は、Jupyter Notebook の作成・編集・単独実行・出力確認と、CSV・TSV・Parquet の読み取り専用確認を提供するコマンドラインツール兼 Codex プラグインです。
 
 Notebook の構造を操作するコマンドはコードを実行しません。`notebook execute` は Papermill でソースを実行し、元の Notebook を保ったまま別の実行済み Notebook と実行記録を保存します。分析の目的・問い・手法・run・履歴・レポートは、inquiry-lab などの利用側ワークフローで管理します。

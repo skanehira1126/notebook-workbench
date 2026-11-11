@@ -1,6 +1,6 @@
 {
   "name": "notebook-workbench",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Inspect data, safely edit Jupyter notebooks, execute source notebooks, and inspect saved outputs.",
   "author": {
     "name": "Notebook Workbench contributors"
@@ -19,6 +19,7 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Notebook Workbench",
+    "logo": "./assets/notebook-workbench-logo.png",
     "shortDescription": "Create, edit, execute, and inspect notebooks.",
     "longDescription": "Provides a deterministic local CLI and Codex workflows for inspecting CSV, TSV, and Parquet data, editing notebooks by stable cell ID or tag, executing with local or Docker Papermill, and preserving separate source, output, and execution evidence.",
     "developerName": "Notebook Workbench contributors",
